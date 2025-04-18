@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base target="_top" />
+  <title>Google Groups Management</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      background-color: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .authorize-button,
+    .revoke-button {
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 0.5rem;
+      transition: background-color 0.3s ease;
+    }
+
+    .authorize-button:hover,
+    .revoke-button:hover {
+      background-color: #155fc0;
+    }
+
+    .output-container {
+      margin-top: 1.5rem;
+      font-size: 0.95rem;
+      color: #333;
+      background-color: #f0f0f0;
+      padding: 1rem;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🔐 Google Groups Management</h2>
+
+    <!-- Buttons -->
+    <button class="authorize-button" onclick="handleAuth()">Authorize</button>
+    <button class="revoke-button" onclick="handleRevoke()">Revoke Access</button>
+
+    <!-- Output Container -->
+    <div id="outputContainer" class="output-container">Status: Not yet authorized</div>
+  </div>
+
+  <script>
+    function handleAuth() {
+      console.log("🔐 Starting authorization...");
+      document.getElementById("outputContainer").innerText = "⏳ Requesting authorization...";
+
+      google.script.run
+        .withSuccessHandler(response => {
+          const data = JSON.parse(response);
+          if (data.authorized) {
+            document.getElementById("outputContainer").innerText = "✅ Already authorized. You may not close this window!";
+          } else {
+            const authUrl = data.auth.uri;
+            window.open(authUrl, "_blank");
+            document.getElementById("outputContainer").innerText = "🔑 Please complete authorization in the new tab.";
+          }
+        })
+        .withFailureHandler(error => {
+          console.error("❌ Authorization error:", error);
+          document.getElementById("outputContainer").innerText = "❌ Error: " + error.message;
+        })
+        .authorizeUser();
+    }
+
+    function handleRevoke() {
+      console.log("🧹 Revoking access...");
+      document.getElementById("outputContainer").innerText = "⏳ Revoking access...";
+
+      google.script.run
+        .withSuccessHandler(() => {
+          document.getElementById("outputContainer").innerText = "✅ Access revoked successfully.";
+        })
+        .withFailureHandler(error => {
+          console.error("❌ Revoke error:", error);
+          document.getElementById("outputContainer").innerText = "❌ Error: " + error.message;
+        })
+        .resetOAuth(); // This should match your backend revoke method
+    }
+  </script>
+</body>
+</html>
