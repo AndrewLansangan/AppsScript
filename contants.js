@@ -34,11 +34,12 @@ const HEADER_MAPPING = {
  * @property {string[]} RAW - The headers for the RawData sheet.
  */
 const HEADERS = {
+  DETAIL_REPORT: ['Email', 'Expected', 'Actual', 'Hash', 'Last Modified'],
+  SUMMARY_REPORT: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
+  DISCREPANCIES: ['Email', 'Key', 'Expected', 'Actual', 'Last Modified'],
+  HASHES: ['Email', 'Business Hash', 'Full Hash', 'Last Modified'],
   GROUP_EMAILS: ['Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'ETag', 'Last Modified'],
-  DISCREPANCIES: ['Email', 'Expected', 'Actual', 'SHA (Hidden)', 'Last Modified'],
-  SUMMARY: ['Timestamp', 'Total Groups', 'Groups with Issues', 'Affected Groups', 'Last Modified'],
-  RAW: ['Timestamp', 'Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'ETag', 'Last Modified'],
-  HASHES: ['Email', 'Business Hash', 'Full Hash', 'Last Modified']
+  RAW: ['Timestamp', 'Email', 'Response', 'Payload']
 };
 
 const HIDDEN_COLUMNS = ['ETag', 'Last Modified'];
@@ -55,11 +56,12 @@ const RESIZE_COLUMNS = ['Email', 'Name', 'Description'];
  * @property {string} ARCHIVE - The name of the Archive sheet.
  */
 const SHEET_NAMES = {
-  GROUP_HASHES: 'Group Hashes',  // Make sure this is defined
-  GROUP_EMAILS: 'Group Emails',
+  DETAIL_REPORT: 'Detail Report',
+  SUMMARY_REPORT: 'Summary Report',
   DISCREPANCIES: 'Discrepancies',
-  SUMMARY: 'Summary',
-  RAW: 'RawData',
+  GROUP_HASHES: 'Group Hashes',
+  GROUP_EMAILS: 'Group Emails',
+  RAW: 'Raw Data',
   ARCHIVE: 'Archive'
 };
 
@@ -117,11 +119,14 @@ const HTTP_HEADERS = ['Authorization', 'If-Match', 'If-None-Match', 'Content-Typ
  * @property {string[]} RAW - Headers for the RawData sheet.
  */
 const SHEET_CONFIG = {
-  [SHEET_NAMES.GROUP_EMAILS]: HEADERS.GROUP_EMAILS,
+  [SHEET_NAMES.DETAIL_REPORT]: HEADERS.DETAIL_REPORT,
+  [SHEET_NAMES.SUMMARY_REPORT]: HEADERS.SUMMARY_REPORT,
   [SHEET_NAMES.DISCREPANCIES]: HEADERS.DISCREPANCIES,
-  [SHEET_NAMES.SUMMARY]: HEADERS.SUMMARY,
+  [SHEET_NAMES.GROUP_HASHES]: HEADERS.HASHES,
+  [SHEET_NAMES.GROUP_EMAILS]: HEADERS.GROUP_EMAILS,
   [SHEET_NAMES.RAW]: HEADERS.RAW
 };
+
 
 /**
  * Initializes the sheets in the Google Spreadsheet by creating them if they do not exist,

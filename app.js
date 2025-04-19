@@ -253,12 +253,9 @@ function filterGroupSettings(groupSettingsData) {
 
   groupSettingsData.forEach(entry => {
     const { email, settings = {} } = entry;
-
-    // Skip entries that errored or were unchanged
     if (!email || entry.unchanged || entry.error) return;
 
-    // Optional: retrieve current stored hash if you want to use it for logging
-    // const storedHash = getGroupSettingsHash(email);
+    const { businessHash } = computeDualGroupSettingsHash(settings);
 
     Object.entries(UPDATED_SETTINGS).forEach(([key, expectedValue]) => {
       const actualValue = settings[key];
@@ -266,11 +263,10 @@ function filterGroupSettings(groupSettingsData) {
       if (actualValue !== expectedValue) {
         discrepancies.push({
           email,
-          hash: computeGroupSettingsHash(settings), // pseudo-etag
           key,
           expected: expectedValue,
-          actual: actualValue !== undefined ? actualValue : 'N/A',
-          timestamp: now
+          actual: actualValue ?? 'N/A',
+          hash: businessHash
         });
       }
     });
@@ -278,6 +274,7 @@ function filterGroupSettings(groupSettingsData) {
 
   return discrepancies;
 }
+
 
 /**
  * Retrieves and processes Google Workspace group data:
@@ -312,7 +309,7 @@ function listGroups(bypassETag = true) {
   const filtered = filterGroups(groupData);
 
   // Step 5: Archive the old data sheet (if it exists)
-  archiveSheetByDate(SHEET_NAMES.GROUP_EMAILS);
+  archiveReportSheet(SHEET_NAMES.GROUP_EMAILS);
 
   // Step 6: Write the filtered group data to the active sheet
   writeGroupListToSheet(filtered);
@@ -351,83 +348,48 @@ function listGroups(bypassETag = true) {
  */
 function listGroupSettings() {
   return benchmark("listGroupSettings", () => {
-    // Step 1: Get group emails from sheet or fallback
-    const allSheetEmails = getGroupEmailsFromSheet(SHEET_NAMES.DISCREPANCIES); // may include duplicates
-    let groupEmails = [...new Set(allSheetEmails)]; // unique for API call
-    debugLog(`📧 Group emails (raw): ${allSheetEmails.length}, Unique for API: ${groupEmails.length}`);
-
-    if (!Array.isArray(groupEmails) || groupEmails.length < 1) {
-      debugLog(`⚠️ No emails found in sheet. Attempting fallback from ScriptProperties.`);
-      const fallback = getDatatype("GROUP_EMAILS");
-
-      try {
-        const parsed = JSON.parse(fallback || '[]');
-        groupEmails = Array.isArray(parsed) ? getEmailArray({ groups: parsed }) : [];
-      } catch (e) {
-        errorLog(`❌ Failed to parse GROUP_EMAILS from properties`, e.toString());
-        groupEmails = [];
-      }
-    }
+    const groupEmails = resolveGroupEmails(); // ✅ handles sheet → script → fallback
 
     // Step 2: Fetch all group settings
     const { changed, all, errored } = fetchAllGroupSettings(groupEmails);
-    debugLog(`📊 Fetched settings: ${all.length}, Changed: ${changed.length}, Errors: ${errored.length}`);
-
     if (!Array.isArray(all) || all.length === 0) {
       debugLog("❌ No group settings fetched.");
       return [];
     }
 
-    // Step 3: Save dual hashes for all processed
+    // Step 3: Save dual hashes
     const valid = all.filter(r => r.settings && r.hashes);
     const newHashMap = computeDualHashMap(valid);
 
-    // Step 4: Try saving to sheet, if that fails, save in chunks
     try {
-      saveToSheet(newHashMap);  // Try saving in one go
+      saveToSheet(newHashMap);
     } catch (e) {
       debugLog("❌ Saving hash map in chunks due to size limits.");
-      saveToSheetInChunks(newHashMap);  // Save in chunks if it fails
+      saveToSheetInChunks(newHashMap);
     }
 
-    // Step 5: Filter all discrepancies (regardless of change detection)
-    const violations = filterGroupSettings(valid); // one entry per mismatched key
-
+    // Step 4: Filter violations
+    const violations = filterGroupSettings(valid);
     if (violations.length === 0) {
       debugLog("✅ No group settings violations found. Skipping write.");
       return all;
     }
 
-    // Step 6: Group violations by email → one row per group
-    const grouped = {};
-    violations.forEach(({ email, key, expected, actual }) => {
-      if (!grouped[email]) grouped[email] = { expected: [], actual: [] };
-      grouped[email].expected.push(`${key}: ${expected}`);
-      grouped[email].actual.push(`${key}: ${actual ?? 'N/A'}`);
-    });
+    // Step 5: Generate row data
+    const detailRows = generateDiscrepancyRows(violations);
+    const violationKeyMap = generateViolationKeyMap(violations);
 
-    // Step 7: Convert grouped map into rows
-    const rows = Object.entries(grouped).map(([email, data]) => [
-      email,
-      data.expected.join('\n'),
-      data.actual.join('\n')
-    ]);
+    // ✅ Step 6: Write reports
+    const rowMap = writeDetailReport(detailRows);       // 1 row per group
+    writeDiscrepancyLog(violations);                    // 1 row per key issue
+    writeSummaryReport(rowMap, violationKeyMap);        // Summary w/ hyperlinks
 
-    // Step 8: Archive and write final results
-    archiveSheetByDate(SHEET_NAMES.DISCREPANCIES);
-    writeGroupedGroupSettings(rows);
-
-    debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${rows.length} with violations.`);
+    debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${violations.length} key-level violations.`);
     if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
 
     return all;
   });
 }
-
-
-
-
-
 
 function updateGroupSettings() {
 

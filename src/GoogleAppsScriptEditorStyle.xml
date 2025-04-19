@@ -1,0 +1,15 @@
+<code_scheme name="Google JavaScript" version="173">
+    <JavaScriptCodeStyleSettings>
+        <option name="USE_SEMICOLON_AFTER_STATEMENT" value="true" />
+        <option name="SPACE_BEFORE_FUNCTION_LEFT_PARENTH" value="true" />
+        <option name="INDENT_CHAINED_METHODS" value="true" />
+    </JavaScriptCodeStyleSettings>
+    <codeStyleSettings language="JavaScript">
+        <option name="RIGHT_MARGIN" value="100" />
+        <option name="INDENT_SIZE" value="2" />
+        <option name="TAB_SIZE" value="2" />
+        <option name="CONTINUATION_INDENT_SIZE" value="4" />
+        <option name="KEEP_BLANK_LINES_IN_CODE" value="1" />
+        <option name="BLANK_LINES_BEFORE_METHOD" value="1" />
+    </codeStyleSettings>
+</code_scheme>
