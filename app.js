@@ -60,7 +60,7 @@ function fetchAllGroupData(domain, bypassETag = true) {
       description: group.description,
       directMembersCount: group.directMembersCount || 0,
       adminCreated: group.adminCreated || false,
-      etag: group.etag || 'N/A'
+      etag: group.etag || 'Not Found'
     }));
 
     groups.push(...currentGroups);
@@ -111,7 +111,7 @@ function fetchGroupSettings(email) {
     if (CHECK_BUSINESS_HASH) {
       businessUnchanged = businessHash === old.businessHash;
       debugLog(`🔍 ${email} - businessHash: ${businessUnchanged ? 'same' : 'changed'}`);
-      debugLog(`     current=${businessHash}, previous=${old.businessHash || 'N/A'}`);
+      debugLog(`     current=${businessHash}, previous=${old.businessHash || 'Not Found'}`);
     } else {
       debugLog(`⚠️ ${email} - businessHash comparison is DISABLED`);
     }
@@ -119,7 +119,7 @@ function fetchGroupSettings(email) {
     if (CHECK_FULL_HASH) {
       fullUnchanged = fullHash === old.fullHash;
       debugLog(`🔍 ${email} - fullHash: ${fullUnchanged ? 'same' : 'changed'}`);
-      debugLog(`     current=${fullHash}, previous=${old.fullHash || 'N/A'}`);
+      debugLog(`     current=${fullHash}, previous=${old.fullHash || 'Not Found'}`);
     } else {
       debugLog(`⚠️ ${email} - fullHash comparison is DISABLED`);
     }
@@ -160,7 +160,6 @@ function fetchGroupSettings(email) {
     return { email, error: true };
   }
 }
-
 
 /**
  * Fetches group settings for multiple groups and returns categorized results.
@@ -252,6 +251,8 @@ function filterGroups(groupData, whitelist = [], blacklist = []) {
  * @returns {Array<Object>} - Array of discrepancy objects for writing to sheet.
  */
 function filterGroupSettings(groupSettingsData) {
+  debugLog(`📌 Keys to check: ${Object.keys(UPDATED_SETTINGS).join(', ')}`);
+
   const now = new Date().toISOString();
   const discrepancies = [];
 
@@ -269,7 +270,7 @@ function filterGroupSettings(groupSettingsData) {
           email,
           key,
           expected: expectedValue,
-          actual: actualValue ?? 'N/A',
+          actual: actualValue ?? 'Not Found',
           hash: businessHash
         });
       }
@@ -279,77 +280,81 @@ function filterGroupSettings(groupSettingsData) {
   return discrepancies;
 }
 
-
-/**
- * Retrieves and processes Google Workspace group data:
- * - Fetches group list from Directory API
- * - Checks if the data has changed via hashing
- * - Optionally archives old sheet
- * - Writes updated group data to the sheet
- * - Stores the new data and hash for future comparison
- *
- * @param {boolean} [bypassETag=true] - If true, bypasses domain-level ETag caching and forces a full API fetch.
- * @returns {Array<Object>} - The list of group objects fetched from the API, or an empty array if no changes were detected.
- */
 function listGroups(bypassETag = true) {
-  // Step 1: Fetch group data from the API
-  let groupData = fetchAllGroupData(getWorkspaceDomain(), bypassETag);
+  return benchmark("listGroups", () => {
+    try {
+      const groupData = fetchAllGroupData(getWorkspaceDomain(), bypassETag);
 
-  // Step 2: Ensure groupData is a valid, non-empty array before proceeding
-  if (!Array.isArray(groupData) || groupData.length === 0) {
-    debugLog("No valid group data retrieved.");
-    return [];
-  }
+      if (!Array.isArray(groupData) || groupData.length === 0) {
+        debugLog("No valid group data retrieved.");
+        return [];
+      }
 
-  debugLog(`Fetched ${groupData.length} groups.`);
+      debugLog(`Fetched ${groupData.length} groups.`);
 
-  // Step 3: Compare new hash with the previously stored one
-  if (!hasDataChanged("GROUP_EMAILS", groupData)) {
-    debugLog("✅ No changes in group data. Skipping processing.");
-    return groupData;
-  }
+      if (!hasDataChanged("GROUP_EMAILS", groupData)) {
+        debugLog("✅ No changes in group data. Skipping processing.");
+        return groupData;
+      }
 
-  // Step 4: Filter the group data before writing
-  const filtered = filterGroups(groupData);
+      const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS.GROUP_EMAILS);
+      const now = new Date().toISOString();
 
-  // Step 5: Archive the old data sheet (if it exists)
-  archiveSheet(SHEET_NAMES.GROUP_EMAILS);
+      const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
+      const modifiedMap = {};
 
-  // Step 6: Write the filtered group data to the active sheet
-  writeGroupListToSheet(filtered);
+      if (sheet.getLastRow() > 1) {
+        const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.GROUP_EMAILS.length).getValues();
+        const emailIndex = 0;
+        const lastModifiedIndex = HEADERS.GROUP_EMAILS.indexOf("Last Modified");
 
-  // Step 7: Store the updated group data and its hash
-  storeDataAndHash("GROUP_EMAILS", groupData);
+        existing.forEach(row => {
+          const email = row[emailIndex];
+          const modified = row[lastModifiedIndex];
+          if (email) modifiedMap[email] = modified;
+        });
+      }
 
-  // Step 8: Log the success
-  debugLog(`✅ Processed and saved ${filtered.length} groups.`);
+      const newETagMap = {};
 
-  // Step 9: Return the processed group data
-  return groupData;
+      const rows = groupData.map(group => {
+        const oldETag = oldETagMap[group.email] || '';
+        const newETag = group.etag || 'Not Found';
+        const isModified = oldETag !== newETag;
+        const lastModified = isModified && oldETag ? now : modifiedMap[group.email] || '';
+        newETagMap[group.email] = newETag;
+
+        return [
+          group.email,
+          group.name || '',
+          group.description || '',
+          group.directMembersCount || 0,
+          group.adminCreated || false,
+          oldETag,
+          newETag,
+          lastModified
+        ];
+      });
+
+      if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.GROUP_EMAILS.length).clearContent();
+      }
+
+      sheet.getRange(2, 1, rows.length, HEADERS.GROUP_EMAILS.length).setValues(rows);
+      applyColumnFormatting(sheet, HEADERS.GROUP_EMAILS);
+
+      PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
+      storeDataAndHash("GROUP_EMAILS", groupData);
+
+      debugLog(`✅ Processed and saved ${rows.length} groups.`);
+      return groupData;
+    } catch (err) {
+      errorLog("❌ Error in listGroups", err.toString());
+      return [];
+    }
+  });
 }
-/**
- * Retrieves and processes group settings from the Google Groups Settings API.
- * Falls back to cached data if no group emails are found in the sheet.
- * Compares current settings to stored hashes to avoid unnecessary writes.
- * Writes discrepancies to the sheet and updates the stored hash and data if changes are detected.
- *
- * @param {boolean} [bypassETag=true] - Whether to bypass ETag caching when fetching group settings.
- * @returns {Array<{email: string, settings: Object, etag?: string}>} An array of fetched group settings.
- * /**
- * @typedef {Object} GroupSettingEntry
- * @property {string} email - Group email address.
- * @property {Object} settings - Settings object containing group configurations.
- * @property {string} [etag] - Optional ETag for caching.
- * 
- * /**
- * @param {boolean} [bypassETag=true]
- * @returns {GroupSettingEntry[]} Array of group setting entries.
- */
 
-/**
- * Fetches group settings, computes dual hashes, and logs + writes discrepancies if anything changed.
- * @returns {GroupSettingEntry[]} Array of fetched group settings
- */
 function listGroupSettings() {
   return benchmark("listGroupSettings", () => {
     const groupEmails = resolveGroupEmails(); // ✅ handles sheet → script → fallback
@@ -367,15 +372,20 @@ function listGroupSettings() {
     // 🔐 Step 4: Generate hash map only for entries that have hashes
     const validForHashing = entriesWithSettings.filter(r => r.hashes);
     const newHashMap = computeDualHashMap(validForHashing);
+
     logHashDifferences(newHashMap);
     saveDualHashMap(newHashMap);
     debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
-    try {
-      saveToSheet(newHashMap);
-    } catch (e) {
-      debugLog("❌ Saving hash map in chunks due to size limits.");
-      saveToSheetInChunks(newHashMap);
+    if (validForHashing.length > 0) {
+      try {
+        saveToSheet(newHashMap);
+      } catch (e) {
+        debugLog("❌ Saving hash map in chunks due to size limits.");
+        saveToSheetInChunks(newHashMap);
+      }
+    } else {
+      debugLog("ℹ️ Hash map unchanged. Skipping sheet save.");
     }
 
     // ⚠️ Step 5: Check for policy violations even if unchanged

@@ -83,6 +83,7 @@ function listLogs(message, data = null, enableLogs = true) {
     debugLog(`📋 ListGroupSettings Log: ${message}`, data);
   }
 }
+
 function logHashDifferences(newHashMap) {
   const oldHashMap = getStoredDualHashMap();
 
@@ -97,17 +98,19 @@ function logHashDifferences(newHashMap) {
       return;
     }
 
-
     const businessChanged = oldHashes.businessHash !== newHashes.businessHash;
     const fullChanged = oldHashes.fullHash !== newHashes.fullHash;
 
+    const oldBusiness = oldHashes.businessHash || 'Not Found';
+    const oldFull = oldHashes.fullHash || 'Not Found';
+
     debugLog(`🔍 ${email}:`);
     debugLog(`  businessHash equal: ${!businessChanged}`);
-    debugLog(`    old → ${oldHashes.businessHash}`);
+    debugLog(`    old → ${oldBusiness}`);
     debugLog(`    new → ${newHashes.businessHash}`);
 
     debugLog(`  fullHash equal: ${!fullChanged}`);
-    debugLog(`    old → ${oldHashes.fullHash}`);
+    debugLog(`    old → ${oldFull}`);
     debugLog(`    new → ${newHashes.fullHash}`);
   });
 }

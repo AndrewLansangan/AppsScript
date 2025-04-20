@@ -102,10 +102,20 @@ function autoWrapSheetColumns(sheet, columnNames, headers) {
 }
 
 function applyColumnFormatting(sheet, headers) {
-  hideSheetColumns(sheet, HIDDEN_COLUMNS, headers);
-  autoResizeSheetColumns(sheet, RESIZE_COLUMNS, headers);
-  autoWrapSheetColumns(sheet, WRAP_COLUMNS, headers); // 👈 add this
-  styleSheetHeaders(sheet, headers); // ✅ Always format headers as bold + centered
+  const actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (!actualHeaders || actualHeaders.length === 0) {
+    debugLog(`⚠️ No headers found for sheet ${sheet.getName()}. Skipping formatting.`);
+    return;
+  }
+
+  hideSheetColumns(sheet, HIDDEN_COLUMNS, actualHeaders);
+  autoResizeSheetColumns(sheet, RESIZE_COLUMNS, actualHeaders);
+  autoWrapSheetColumns(sheet, WRAP_COLUMNS, actualHeaders);
+  styleSheetHeaders(sheet, actualHeaders);
+}
+function doHeadersMatch(sheet, expectedHeaders) {
+  const actualHeaders = sheet.getRange(1, 1, 1, expectedHeaders.length).getValues()[0];
+  return JSON.stringify(actualHeaders) === JSON.stringify(expectedHeaders);
 }
 
 // ===========================
@@ -113,11 +123,18 @@ function applyColumnFormatting(sheet, headers) {
 // ===========================
 
 function saveToSheet(hashMap) {
+  // TODO: Add conditional formatting to highlight changed hashes
   debugLog(`Total entries in hashMap: ${Object.keys(hashMap).length} for saveToSheet()`);
 
   const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_HASHES, HEADERS.HASHES);
   const oldMapRaw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
   const oldMap = oldMapRaw ? JSON.parse(oldMapRaw) : {};
+
+  if (doHeadersMatch(sheet, HEADERS.HASHES)) {
+    applyColumnFormatting(sheet, HEADERS.HASHES);
+  } else {
+    debugLog(`⚠️ Header mismatch in ${sheet.getName()}. Skipping formatting.`);
+  }
 
   // Clear existing data but preserve headers
   if (sheet.getLastRow() > 1) {
@@ -148,9 +165,9 @@ function saveToSheet(hashMap) {
       email,
       hashes.businessHash,
       hashes.fullHash,
-      isModified ? now : modifiedMap[email] || '',
       old.businessHash || '',
-      old.fullHash || ''
+      old.fullHash || '',
+      isModified ? now : modifiedMap[email] || '',
     ];
   });
 
@@ -170,7 +187,9 @@ function saveToSheetInChunks(hashMap) {
   const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_HASHES, HEADERS.HASHES);
   const chunkSize = 1000;
   const mapEntries = Object.entries(hashMap);
-
+  if (sheet.getName() === SHEET_NAMES.GROUP_HASHES) {
+    applyColumnFormatting(sheet, HEADERS.HASHES);
+  }
   if (sheet.getLastRow() > 1) {
     sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
   }
@@ -226,7 +245,7 @@ function writeGroupListToSheet(groupData) {
       if (value === undefined) {
         if (key === 'directMembersCount') return 0;
         if (key === 'adminCreated') return false;
-        return 'N/A';
+        return 'Not Found';
       }
       return key === 'directMembersCount' ? Number(value) : value;
     });
@@ -294,7 +313,7 @@ function writeGroupListToSheet(groupData) {
 
 function writeDetailReport(rows) {
   const sheet = getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, HEADERS.DETAIL_REPORT);
-  const rowsToWrite = rows.slice(0, 10); // or write them all if ready
+  const rowsToWrite = rows.slice(0, 50)
 
   if (rowsToWrite.length > 0) {
     const lastRow = sheet.getLastRow();
@@ -384,7 +403,7 @@ function writeDiscrepancyLog(violations) {
     email,
     key,
     expected,
-    actual ?? 'N/A',
+    actual ?? 'Not Found',
     now
   ]);
 
@@ -438,7 +457,7 @@ function updateRowByKey(sheet, headers, keyField, dataObj) {
     }
   }
 
-  const rowValues = headers.map(h => dataObj[h] !== undefined ? dataObj[h] : 'N/A');
+  const rowValues = headers.map(h => dataObj[h] !== undefined ? dataObj[h] : 'Not Found');
 
   if (rowToUpdate === -1) {
     sheet.appendRow(rowValues);
@@ -560,7 +579,7 @@ function generateDiscrepancyRows(violations) {
     if (!grouped[email]) {
       grouped[email] = {
         entries: [],
-        hash: hash || 'N/A'
+        hash: hash || 'Not Found'
       };
     }
 
@@ -570,7 +589,7 @@ function generateDiscrepancyRows(violations) {
   return Object.entries(grouped).map(([email, data]) => {
     const pad = (str, len) => String(str).padEnd(len, ' ');
     const lines = data.entries.map(({ key, expected, actual }) =>
-      `${pad(key, 24)} → ${pad(expected, 24)} | ${String(actual ?? 'N/A')}`
+      `${pad(key, 24)} → ${pad(expected, 24)} | ${String(actual ?? 'Not Found')}`
     );
 
     const expectedCol = lines.map(line => line.split('→')[0].trim()).join('\n');

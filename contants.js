@@ -37,10 +37,11 @@ const HEADERS = {
   DETAIL_REPORT: ['Email', 'Expected', 'Actual', 'Hash', 'Last Modified'],
   SUMMARY_REPORT: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
   DISCREPANCIES: ['Email', 'Key', 'Expected', 'Actual', 'Last Modified'],
-  HASHES: ['Email', 'New Business Hash', 'New Full Hash', 'Last Modified', 'Old Business Hash', 'Old Full Hash'],
-  GROUP_EMAILS: ['Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'ETag', 'Last Modified'],
+  HASHES: ['Email', 'New Business Hash', 'New Full Hash', 'Old Business Hash', 'Old Full Hash', 'Last Modified'],
+  GROUP_EMAILS: ['Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'Old ETag', 'New ETag', 'Last Modified'],
   RAW: ['Timestamp', 'Email', 'Response', 'Payload']
 };
+
 const CHECK_BUSINESS_HASH = true;
 const CHECK_FULL_HASH = true;
 
