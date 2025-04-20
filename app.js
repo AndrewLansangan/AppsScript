@@ -34,6 +34,134 @@ function fetchSingleGroupData(email) {
   }
 }
 
+function fetchAllGroupData(domain, bypassETag = true) {
+  const groups = [];
+  let pageToken = null;
+
+  do {
+    let url = `${ADMIN_DIRECTORY_API_BASE_URL}?domain=${encodeURIComponent(domain)}`;
+    if (pageToken) url += `&pageToken=${pageToken}`;
+
+    const res = UrlFetchApp.fetch(url, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      muteHttpExceptions: true
+    });
+
+    const status = res.getResponseCode();
+    if (status !== 200) {
+      errorLog(`❌ Error fetching group list: ${res.getContentText()}`);
+      return [];
+    }
+
+    const data = JSON.parse(res.getContentText());
+    const currentGroups = (data.groups || []).map(group => ({
+      email: group.email,
+      name: group.name,
+      description: group.description,
+      directMembersCount: group.directMembersCount || 0,
+      adminCreated: group.adminCreated || false,
+      etag: group.etag || 'N/A'
+    }));
+
+    groups.push(...currentGroups);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return groups;
+}
+
+function fetchGroupSettings(email) {
+  const encodedEmail = encodeURIComponent(email);
+  const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodedEmail}?alt=json`;
+
+  const headers = {
+    Authorization: `Bearer ${TOKEN}`,
+  };
+
+  try {
+    const res = UrlFetchApp.fetch(url, {
+      method: 'GET',
+      headers,
+      muteHttpExceptions: true
+    });
+
+    const status = res.getResponseCode();
+    const contentText = res.getContentText();
+
+    if (status === 304) {
+      debugLog(`🔁 API-level 304 Not Modified for ${email}`);
+      return { email, unchanged: true };
+    }
+
+    if (status !== 200 || !contentText || contentText.trim().startsWith('<')) {
+      errorLog(`❌ Unexpected response for ${email}`, contentText.slice(0, 300));
+      return { email, error: true };
+    }
+
+    const data = JSON.parse(contentText);
+    const { businessHash, fullHash } = computeDualGroupSettingsHash(data);
+
+    const rawMap = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
+    const hashMap = rawMap ? JSON.parse(rawMap) : {};
+    const old = hashMap[email] || {};
+
+    let businessUnchanged = true;
+    let fullUnchanged = true;
+
+    if (CHECK_BUSINESS_HASH) {
+      businessUnchanged = businessHash === old.businessHash;
+      debugLog(`🔍 ${email} - businessHash: ${businessUnchanged ? 'same' : 'changed'}`);
+      debugLog(`     current=${businessHash}, previous=${old.businessHash || 'N/A'}`);
+    } else {
+      debugLog(`⚠️ ${email} - businessHash comparison is DISABLED`);
+    }
+
+    if (CHECK_FULL_HASH) {
+      fullUnchanged = fullHash === old.fullHash;
+      debugLog(`🔍 ${email} - fullHash: ${fullUnchanged ? 'same' : 'changed'}`);
+      debugLog(`     current=${fullHash}, previous=${old.fullHash || 'N/A'}`);
+    } else {
+      debugLog(`⚠️ ${email} - fullHash comparison is DISABLED`);
+    }
+
+    const skip =
+      (CHECK_BUSINESS_HASH ? businessUnchanged : true) &&
+      (CHECK_FULL_HASH ? fullUnchanged : true);
+
+    if (skip) {
+      let reason = '';
+      if (!CHECK_BUSINESS_HASH && !CHECK_FULL_HASH) {
+        reason = '⚠️ Skipping due to both hash checks being disabled.';
+      } else if (!CHECK_BUSINESS_HASH || !CHECK_FULL_HASH) {
+        reason = 'ℹ️ Skipping: enabled hash check(s) show no change.';
+      } else {
+        reason = '✅ Skipping: both hashes unchanged.';
+      }
+
+      debugLog(`🔁 Skipped ${email}. ${reason}`);
+      return {
+        email,
+        settings: data,
+        unchanged: true
+      };
+    }
+
+    return {
+      email,
+      settings: data,
+      hashes: {
+        businessHash,
+        fullHash
+      }
+    };
+
+  } catch (err) {
+    errorLog(`❌ Exception in fetchGroupSettings for ${email}`, err.toString());
+    return { email, error: true };
+  }
+}
+
+
 /**
  * Fetches group settings for multiple groups and returns categorized results.
  *
@@ -85,130 +213,6 @@ function fetchAllGroupSettings(emails, useGlobalHashCheck = false) {
   // summary: { total: all.length, changed: changed.length, unchanged: unchanged.length, errored: errored.length }
 
   // TODO: Add end time and duration tracking if benchmarking
-
-  return { all, changed, unchanged, errored };
-}
-
-
-
-/**
- * Fetches group settings using group email and handles ETag caching.
- * @param {string} email - Group email
- * @returns {Object} Settings data or status (unchanged/error)
- */
-/**
- * Fetches group settings using group email and handles ETag caching.
- *
- * @param {string} email - Group email address
- * @param {boolean} [bypassETag=false] - Whether to bypass ETag caching
- * @returns {Object} An object with settings or status (unchanged/error)
- */
-function fetchGroupSettings(email, useGlobalHashCheck = false) {
-  const encodedEmail = encodeURIComponent(email);
-  const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodedEmail}?alt=json`;
-
-  const headers = {
-    Authorization: `Bearer ${TOKEN}`,
-  };
-
-  try {
-    const res = UrlFetchApp.fetch(url, {
-      method: 'GET',
-      headers,
-      muteHttpExceptions: true
-    });
-
-    const status = res.getResponseCode();
-    const contentText = res.getContentText();
-
-    if (status === 304) {
-      debugLog(`🔁 Settings unchanged for ${email}`);
-      return { email, unchanged: true };
-    }
-
-    if (status !== 200 || !contentText || contentText.trim().startsWith('<')) {
-      errorLog(`❌ Unexpected response for ${email}`, contentText.slice(0, 300));
-      return { email, error: true };
-    }
-
-    const data = JSON.parse(contentText);
-
-    // 🔐 Compute current hash(es)
-    const { businessHash, fullHash } = computeDualGroupSettingsHash(data);
-    const currentHash = useGlobalHashCheck ? fullHash : businessHash;
-
-
-    // 📦 Load previous dual hash map
-    const rawMap = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
-    const hashMap = rawMap ? JSON.parse(rawMap) : {};
-    const prevHash = useGlobalHashCheck
-      ? hashMap[email]?.fullHash
-      : hashMap[email]?.businessHash;
-
-    // 🚦 Compare current vs previous hash
-    if (prevHash && currentHash === prevHash) {
-      debugLog(`🔁 Pseudo-ETag unchanged for ${email}`);
-      return { email, unchanged: true };
-    }
-
-    //businessHash = Map<email, UpdatedSettingsObj>
-    return {
-      email,
-      settings: data,
-      hashes: {
-        businessHash, fullHash
-      }
-    };
-
-  } catch (err) {
-    errorLog(`❌ Exception in fetchGroupSettings for ${email}`, err.toString());
-    return { email, error: true };
-  }
-}
-
-
-/**
- * Fetches group settings for multiple groups and returns categorized results.
- *
- * @param {string[]} emails - Array of group email addresses.
- * @param {boolean} [useGlobalHashCheck=false] - Whether to compare using fullHash instead of businessHash.
- * @returns {{
- *   all: Object[],
- *   changed: Object[],
- *   unchanged: Object[],
- *   errored: Object[]
- * }}
- */
-function fetchAllGroupSettings(emails, useGlobalHashCheck = false) {
-  if (!Array.isArray(emails) || emails.length === 0) {
-    return { all: [], changed: [], unchanged: [], errored: [] };
-  }
-
-  const all = [];
-  const changed = [];
-  const unchanged = [];
-  const errored = [];
-
-  emails.forEach(email => {
-    try {
-      const result = fetchGroupSettings(email, useGlobalHashCheck);
-      all.push(result);
-
-      if (result.error) {
-        errored.push(result);
-      } else if (result.unchanged) {
-        unchanged.push(result);
-      } else {
-        changed.push(result);
-      }
-
-    } catch (err) {
-      const fallback = { email, error: true };
-      all.push(fallback);
-      errored.push(fallback);
-      errorLog(`❌ Error fetching settings for ${email}`, err.toString());
-    }
-  });
 
   return { all, changed, unchanged, errored };
 }
@@ -309,7 +313,7 @@ function listGroups(bypassETag = true) {
   const filtered = filterGroups(groupData);
 
   // Step 5: Archive the old data sheet (if it exists)
-  archiveReportSheet(SHEET_NAMES.GROUP_EMAILS);
+  archiveSheet(SHEET_NAMES.GROUP_EMAILS);
 
   // Step 6: Write the filtered group data to the active sheet
   writeGroupListToSheet(filtered);
@@ -350,16 +354,22 @@ function listGroupSettings() {
   return benchmark("listGroupSettings", () => {
     const groupEmails = resolveGroupEmails(); // ✅ handles sheet → script → fallback
 
-    // Step 2: Fetch all group settings
     const { changed, all, errored } = fetchAllGroupSettings(groupEmails);
     if (!Array.isArray(all) || all.length === 0) {
       debugLog("❌ No group settings fetched.");
       return [];
     }
 
-    // Step 3: Save dual hashes
-    const valid = all.filter(r => r.settings && r.hashes);
-    const newHashMap = computeDualHashMap(valid);
+    // 🔎 Step 3: Process all entries with settings
+    const entriesWithSettings = all.filter(r => r.settings);
+    debugLog(`✅ Groups with settings: ${entriesWithSettings.length}`);
+
+    // 🔐 Step 4: Generate hash map only for entries that have hashes
+    const validForHashing = entriesWithSettings.filter(r => r.hashes);
+    const newHashMap = computeDualHashMap(validForHashing);
+    logHashDifferences(newHashMap);
+    saveDualHashMap(newHashMap);
+    debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
     try {
       saveToSheet(newHashMap);
@@ -368,21 +378,19 @@ function listGroupSettings() {
       saveToSheetInChunks(newHashMap);
     }
 
-    // Step 4: Filter violations
-    const violations = filterGroupSettings(valid);
+    // ⚠️ Step 5: Check for policy violations even if unchanged
+    const violations = filterGroupSettings(entriesWithSettings);
     if (violations.length === 0) {
       debugLog("✅ No group settings violations found. Skipping write.");
       return all;
     }
 
-    // Step 5: Generate row data
     const detailRows = generateDiscrepancyRows(violations);
     const violationKeyMap = generateViolationKeyMap(violations);
 
-    // ✅ Step 6: Write reports
-    const rowMap = writeDetailReport(detailRows);       // 1 row per group
-    writeDiscrepancyLog(violations);                    // 1 row per key issue
-    writeSummaryReport(rowMap, violationKeyMap);        // Summary w/ hyperlinks
+    const rowMap = writeDetailReport(detailRows);
+    writeDiscrepancyLog(violations);
+    writeSummaryReport(rowMap, violationKeyMap);
 
     debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${violations.length} key-level violations.`);
     if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
@@ -391,12 +399,110 @@ function listGroupSettings() {
   });
 }
 
-function updateGroupSettings() {
+function testHashSystem() {
+  const sampleGroups = [
+    {
+      email: 'test1@example.com',
+      settings: {
+        whoCanPostMessage: 'ANYONE_CAN_POST',
+        whoCanInvite: 'ALL_MANAGERS_CAN_INVITE'
+      }
+    },
+    {
+      email: 'test2@example.com',
+      settings: {
+        whoCanPostMessage: 'ALL_MEMBERS_CAN_POST',
+        whoCanInvite: 'OWNERS_ONLY'
+      }
+    }
+  ];
 
+  // Compute and store initial hashes
+  const originalHashMap = computeDualHashMap(sampleGroups);
+  saveDualHashMap(originalHashMap);
+
+  debugLog("✅ Step 1: Saved original hashes.");
+  Logger.log(originalHashMap);
+
+  // Simulate a change in one setting
+  const modifiedGroups = JSON.parse(JSON.stringify(sampleGroups));
+  modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
+
+  const newHashMap = computeDualHashMap(modifiedGroups);
+  logHashDifferences(newHashMap);
+  const changedEmails = getGroupsWithHashChanges(newHashMap);
+
+  debugLog("✅ Step 2: After modification");
+  Logger.log(newHashMap);
+  Logger.log("Detected changed groups: " + changedEmails.join(', '));
+
+  // Optionally, assert expected result
+  if (changedEmails.includes('test1@example.com') && !changedEmails.includes('test2@example.com')) {
+    debugLog("✅ Test passed: Change detection works as expected.");
+  } else {
+    errorLog("❌ Test failed: Hash change detection is not working as expected.");
+  }
 }
-function testHash() {
-  const hash = computeGroupSettingsHash(UPDATED_SETTINGS);
-  Logger.log("Pseudo-ETag: " + hash);
+
+function updateGroupSettings() {
+  const violations = getDiscrepancyRowsFromSheet(); // step 1
+  const updates = [];
+
+  violations.forEach(({ email, key, expected }) => {
+    if (!email || !key || expected === undefined) return;
+
+    if (!updates[email]) updates[email] = {};
+    updates[email][key] = expected;
+  });
+
+  const results = [];
+
+  Object.entries(updates).forEach(([email, updatePayload]) => {
+    try {
+      const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodeURIComponent(email)}`;
+      const response = UrlFetchApp.fetch(url, {
+        method: 'PATCH',
+        contentType: 'application/json',
+        payload: JSON.stringify(updatePayload),
+        headers: {
+          Authorization: `Bearer ${getAccessToken()}`,
+        },
+        muteHttpExceptions: true,
+      });
+
+      const status = response.getResponseCode();
+      const responseBody = response.getContentText();
+      if (status >= 200 && status < 300) {
+        debugLog(`✅ Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
+        results.push({ email, status, keys: Object.keys(updatePayload), success: true });
+      } else {
+        errorLog(`❌ Failed to update ${email}: ${responseBody}`);
+        results.push({ email, status, keys: Object.keys(updatePayload), success: false, error: responseBody });
+      }
+
+    } catch (err) {
+      errorLog(`❌ Exception while updating ${email}`, err.toString());
+      results.push({ email, success: false, error: err.toString() });
+    }
+  });
+
+  // Optional: write `results` to a new sheet or archive failures
+  return results;
+}
+
+function getDiscrepancyRowsFromSheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DISCREPANCIES);
+  if (!sheet) {
+    errorLog("❌ DISCREPANCIES sheet not found.");
+    return [];
+  }
+
+  const rows = sheet.getDataRange().getValues().slice(1); // skip headers
+  return rows.map(([email, key, expected]) => ({
+    email,
+    key,
+    expected,
+  })).filter(row => row.email && row.key && row.expected !== undefined);
 }
 
 function getChangedKeys(oldSettings, newSettings) {

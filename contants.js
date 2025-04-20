@@ -37,14 +37,17 @@ const HEADERS = {
   DETAIL_REPORT: ['Email', 'Expected', 'Actual', 'Hash', 'Last Modified'],
   SUMMARY_REPORT: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
   DISCREPANCIES: ['Email', 'Key', 'Expected', 'Actual', 'Last Modified'],
-  HASHES: ['Email', 'Business Hash', 'Full Hash', 'Last Modified'],
+  HASHES: ['Email', 'New Business Hash', 'New Full Hash', 'Last Modified', 'Old Business Hash', 'Old Full Hash'],
   GROUP_EMAILS: ['Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'ETag', 'Last Modified'],
   RAW: ['Timestamp', 'Email', 'Response', 'Payload']
 };
+const CHECK_BUSINESS_HASH = true;
+const CHECK_FULL_HASH = true;
 
-const HIDDEN_COLUMNS = ['ETag', 'Last Modified'];
+const HIDDEN_COLUMNS = ['ETag', 'Last Modified', 'New Business Hash', 'New Full Hash', 'Old Business Hash', 'Old Full Hash'];
 const RESIZE_COLUMNS = ['Email', 'Name', 'Description'];
-
+const WRAP_COLUMNS = ['Expected Value', 'Actual Value'];
+const ALL_STYLED_COLUMNS = [...new Set([...HIDDEN_COLUMNS, ...RESIZE_COLUMNS, ...WRAP_COLUMNS])]
 /**
  * The names of the sheets where different types of data will be stored.
  * These sheet names should match exactly with the sheets in the Google Spreadsheet.

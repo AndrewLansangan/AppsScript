@@ -40,7 +40,8 @@ function getWorkspaceDomain() {
 // ===========================
 
 function clearGroupProperties() {
-  const keysToDelete = [];
+  const keysToDelete = [    'GROUP_DUAL_HASH_MAP',
+    'GROUP_EMAILS_HASH'];
   const props = PropertiesService.getScriptProperties();
 
   keysToDelete.forEach(key => {

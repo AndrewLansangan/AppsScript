@@ -29,8 +29,8 @@
     ]
   },
   "webapp": {
-    "executeAs": "USER_ACCESSING",
-    "access": "DOMAIN"
+    "executeAs": "USER_DEPLOYING",
+    "access": "MYSELF"
   },
   "oauthScopes": [
     "https://www.googleapis.com/auth/script.external_request",

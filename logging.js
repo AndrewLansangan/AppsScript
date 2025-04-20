@@ -83,3 +83,31 @@ function listLogs(message, data = null, enableLogs = true) {
     debugLog(`📋 ListGroupSettings Log: ${message}`, data);
   }
 }
+function logHashDifferences(newHashMap) {
+  const oldHashMap = getStoredDualHashMap();
+
+  Object.entries(newHashMap).forEach(([email, newHashes]) => {
+    const oldHashes = oldHashMap[email];
+
+    if (!oldHashes) {
+      debugLog(`🔔 ${email} added to hash tracking.`);
+      debugLog(`🆕 ${email}: No previous hashes found. Assuming changed.`);
+      debugLog(`  ├─ businessHash → ${newHashes.businessHash}`);
+      debugLog(`  └─ fullHash     → ${newHashes.fullHash}`);
+      return;
+    }
+
+
+    const businessChanged = oldHashes.businessHash !== newHashes.businessHash;
+    const fullChanged = oldHashes.fullHash !== newHashes.fullHash;
+
+    debugLog(`🔍 ${email}:`);
+    debugLog(`  businessHash equal: ${!businessChanged}`);
+    debugLog(`    old → ${oldHashes.businessHash}`);
+    debugLog(`    new → ${newHashes.businessHash}`);
+
+    debugLog(`  fullHash equal: ${!fullChanged}`);
+    debugLog(`    old → ${oldHashes.fullHash}`);
+    debugLog(`    new → ${newHashes.fullHash}`);
+  });
+}

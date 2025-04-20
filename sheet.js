@@ -55,16 +55,27 @@ function setupReportSheets() {
 // ===========================
 // 📐 Column Formatting
 // ===========================
-
+// TODO: Refactor to use `.filter().forEach()` like hideSheetColumns()
+// to improve clarity and skip missing headers gracefully
 function hideSheetColumns(sheet, columnNames, headers) {
-  columnNames.forEach(col => {
-    const colIndex = headers.indexOf(col);
-    if (colIndex !== -1) {
+  columnNames
+    .filter(col => headers.includes(col))
+    .forEach(col => {
+      const colIndex = headers.indexOf(col);
       sheet.hideColumns(colIndex + 1);
-    }
-  });
+      debugLog(`🙈 Hiding column "${col}" at index ${colIndex + 1}`);
+    });
+
+  // Log any that were not found
+  columnNames
+    .filter(col => !headers.includes(col))
+    .forEach(col => {
+      debugLog(`⚠️ Column "${col}" not found in headers for ${sheet.getName()}`);
+    });
 }
 
+// TODO: Refactor to use `.filter().forEach()` like autoResizeSheetColumns()
+// to improve clarity and skip missing headers gracefully
 function autoResizeSheetColumns(sheet, columnNames, headers) {
   columnNames.forEach(col => {
     const colIndex = headers.indexOf(col);
@@ -80,9 +91,20 @@ function styleSheetHeaders(sheet, headers) {
   sheet.setFrozenRows(1);
 }
 
+function autoWrapSheetColumns(sheet, columnNames, headers) {
+  columnNames.forEach(col => {
+    const colIndex = headers.indexOf(col);
+    if (colIndex !== -1) {
+      const range = sheet.getRange(2, colIndex + 1, sheet.getLastRow() - 1);
+      range.setWrap(true);
+    }
+  });
+}
+
 function applyColumnFormatting(sheet, headers) {
   hideSheetColumns(sheet, HIDDEN_COLUMNS, headers);
   autoResizeSheetColumns(sheet, RESIZE_COLUMNS, headers);
+  autoWrapSheetColumns(sheet, WRAP_COLUMNS, headers); // 👈 add this
   styleSheetHeaders(sheet, headers); // ✅ Always format headers as bold + centered
 }
 
@@ -94,14 +116,48 @@ function saveToSheet(hashMap) {
   debugLog(`Total entries in hashMap: ${Object.keys(hashMap).length} for saveToSheet()`);
 
   const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_HASHES, HEADERS.HASHES);
-  sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 0), sheet.getLastColumn()).clearContent();
+  const oldMapRaw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
+  const oldMap = oldMapRaw ? JSON.parse(oldMapRaw) : {};
 
-  const rows = Object.entries(hashMap).map(([email, hashes]) => [
-    email, hashes.businessHash, hashes.fullHash, new Date().toISOString()
-  ]);
+  // Clear existing data but preserve headers
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+  }
+  const modifiedMap = {};
+  if (sheet.getLastRow() > 1) {
+    const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.HASHES.length).getValues();
+    const emailIndex = 0;
+    const modifiedIndex = 3;
+
+    existing.forEach(row => {
+      const email = row[emailIndex];
+      const modified = row[modifiedIndex];
+      if (email) modifiedMap[email] = modified;
+    });
+  }
+
+  const now = new Date().toISOString();
+
+  const rows = Object.entries(hashMap).map(([email, hashes]) => {
+    const old = oldMap[email] || {};
+    const isModified =
+      hashes.businessHash !== old.businessHash ||
+      hashes.fullHash !== old.fullHash;
+
+    return [
+      email,
+      hashes.businessHash,
+      hashes.fullHash,
+      isModified ? now : modifiedMap[email] || '',
+      old.businessHash || '',
+      old.fullHash || ''
+    ];
+  });
 
   if (rows.length > 0) {
-    sheet.getRange(2, 1, rows.length, 4).setValues(rows);
+    debugLog(`📋 Writing ${rows.length} rows with ${rows[0]?.length || 0} columns`);
+
+    sheet.getRange(2, 1, rows.length, HEADERS.HASHES.length).setValues(rows);
     debugLog(`💾 Saved ${rows.length} hash map entries to the "Group Hashes" sheet.`);
   } else {
     debugLog("ℹ️ No data to save.");
@@ -288,6 +344,12 @@ function writeSummaryReport(rowMap, violationKeyMap) {
     return;
   }
 
+  const detailGid = getSheetGidByName(SHEET_NAMES.DETAIL_REPORT);
+  if (!detailGid) {
+    errorLog("❌ Could not resolve GID for Detail Report sheet.");
+    return;
+  }
+
   if (sheet.getLastRow() > 1) {
     sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
   }
@@ -295,7 +357,7 @@ function writeSummaryReport(rowMap, violationKeyMap) {
   const rows = Object.entries(rowMap).map(([email, row]) => {
     const violatedKeys = violationKeyMap[email] || [];
     return [
-      `=HYPERLINK("#'${SHEET_NAMES.DETAIL_REPORT}'!A${row}", "${email}")`,
+      `=HYPERLINK("https://docs.google.com/spreadsheets/d/${getSheetId()}/edit#gid=${detailGid}&range=A${row}", "${email}")`,
       violatedKeys.length,
       violatedKeys.join(', '),
       now
@@ -397,7 +459,7 @@ function deleteRowByEmail(sheet, email) {
   }
 }
 
-function archiveReportSheet(baseSheetName) {
+function archiveSheet(baseSheetName) {
   const ss = SpreadsheetApp.openById(getSheetId());
   const sheet = ss.getSheetByName(baseSheetName);
   if (!sheet) {
@@ -435,6 +497,12 @@ function archiveData(sheetName, threshold = 1000) {
     sheet.clearContents();
     writeLogEvent(`${sheetName} archived and cleared.`, { archivedRows: data.length });
   }
+}
+
+function getSheetGidByName(sheetName) {
+  const sheets = SpreadsheetApp.openById(getSheetId()).getSheets();
+  const sheet = sheets.find(s => s.getName() === sheetName);
+  return sheet ? sheet.getSheetId() : null;
 }
 
 // ===========================
