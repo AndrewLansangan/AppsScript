@@ -225,11 +225,27 @@ function getStoredDualHashMap() {
 // ⏱️ Benchmark Utility
 // ===========================
 
+/**
+ * Benchmarks the execution time of a function and logs it.
+ * Returns result, duration, and optional error info.
+ *
+ * @param {string} label - A descriptive label for logging.
+ * @param {Function} fn - The function to benchmark.
+ * @returns {{ result: any, duration: number, error?: string }}
+ */
 function benchmark(label, fn) {
   const start = new Date();
-  const result = fn();
-  const end = new Date();
-  const duration = ((end - start) / 1000).toFixed(2);
-  infoLog(`⏱️ ${label} took ${duration}s`);
-  return result;
+  try {
+    const result = fn();
+    const end = new Date();
+    const duration = ((end - start) / 1000).toFixed(2);
+    infoLog(`⏱️ ${label} completed in ${duration}s`);
+    return { result, duration: parseFloat(duration) };
+  } catch (error) {
+    const end = new Date();
+    const duration = ((end - start) / 1000).toFixed(2);
+    errorLog(`⛔ ${label} failed after ${duration}s`, error.toString());
+    return { result: null, duration: parseFloat(duration), error: error.toString() };
+  }
 }
+

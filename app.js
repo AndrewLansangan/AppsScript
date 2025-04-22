@@ -341,7 +341,7 @@ function listGroups(bypassETag = true) {
       }
 
       sheet.getRange(2, 1, rows.length, HEADERS.GROUP_EMAILS.length).setValues(rows);
-      applyColumnFormatting(sheet, HEADERS.GROUP_EMAILS);
+      formatSheet(sheet, HEADERS.GROUP_EMAILS);
 
       PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
       storeDataAndHash("GROUP_EMAILS", groupData);

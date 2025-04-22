@@ -113,6 +113,37 @@ function applyColumnFormatting(sheet, headers) {
   autoWrapSheetColumns(sheet, WRAP_COLUMNS, actualHeaders);
   styleSheetHeaders(sheet, actualHeaders);
 }
+
+/**
+ * Applies formatting to a sheet based on given options.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - The sheet to format.
+ * @param {string[]} headers - The headers for column reference.
+ * @param {{
+ *   wrap?: boolean,
+ *   resize?: boolean,
+ *   hide?: boolean,
+ *   style?: boolean
+ * }} options - Formatting options to apply.
+ */
+function formatSheet(sheet, headers, options = {}) {
+  if (!Array.isArray(headers) || headers.length === 0) {
+    debugLog(`⚠️ No headers provided for sheet ${sheet.getName()}. Skipping formatting.`);
+    return;
+  }
+
+  const opts = {
+    wrap: options.wrap ?? true,
+    resize: options.resize ?? true,
+    hide: options.hide ?? true,
+    style: options.style ?? true
+  };
+
+  if (opts.hide) hideSheetColumns(sheet, HIDDEN_COLUMNS, headers);
+  if (opts.resize) autoResizeSheetColumns(sheet, RESIZE_COLUMNS, headers);
+  if (opts.wrap) autoWrapSheetColumns(sheet, WRAP_COLUMNS, headers);
+  if (opts.style) styleSheetHeaders(sheet, headers);
+}
+
 function doHeadersMatch(sheet, expectedHeaders) {
   const actualHeaders = sheet.getRange(1, 1, 1, expectedHeaders.length).getValues()[0];
   return JSON.stringify(actualHeaders) === JSON.stringify(expectedHeaders);
@@ -131,7 +162,7 @@ function saveToSheet(hashMap) {
   const oldMap = oldMapRaw ? JSON.parse(oldMapRaw) : {};
 
   if (doHeadersMatch(sheet, HEADERS.HASHES)) {
-    applyColumnFormatting(sheet, HEADERS.HASHES);
+    formatSheet(sheet, HEADERS.HASHES);
   } else {
     debugLog(`⚠️ Header mismatch in ${sheet.getName()}. Skipping formatting.`);
   }
@@ -188,7 +219,7 @@ function saveToSheetInChunks(hashMap) {
   const chunkSize = 1000;
   const mapEntries = Object.entries(hashMap);
   if (sheet.getName() === SHEET_NAMES.GROUP_HASHES) {
-    applyColumnFormatting(sheet, HEADERS.HASHES);
+    formatSheet(sheet, HEADERS.HASHES);
   }
   if (sheet.getLastRow() > 1) {
     sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
@@ -219,7 +250,7 @@ function writeGroupListToSheet(groupData) {
     sheet.getRange(1, 1, 1, HEADERS.GROUP_EMAILS.length).setValues([HEADERS.GROUP_EMAILS]);
   }
 
-  applyColumnFormatting(sheet, HEADERS.GROUP_EMAILS);
+  formatSheet(sheet, HEADERS.GROUP_EMAILS);
 
   const data = sheet.getDataRange().getValues();
   const header = data[0];
