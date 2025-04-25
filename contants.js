@@ -67,7 +67,7 @@ const FORMATTING_CONFIG = {
 // ===========================
 
 Object.entries(SHEET_CONFIG).forEach(([name, headers]) => {
-  const sheet = getOrCreateSheet(name);
+  const sheet = getOrCreateSheet(name, headers);
   if (sheet.getLastRow() === 0) sheet.appendRow(headers);
 });
 

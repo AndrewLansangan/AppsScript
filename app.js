@@ -302,16 +302,16 @@ function listGroups(bypassETag = true) {
         return groupData;
       }
 
-      const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS.GROUP_EMAILS);
+      const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
       const now = new Date().toISOString();
 
       const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
       const modifiedMap = {};
 
       if (sheet.getLastRow() > 1) {
-        const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.GROUP_EMAILS.length).getValues();
+        const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).getValues();
         const emailIndex = 0;
-        const lastModifiedIndex = HEADERS.GROUP_EMAILS.indexOf("Last Modified");
+        const lastModifiedIndex = HEADERS[SHEET_NAMES.GROUP_EMAILS].indexOf("Last Modified");
 
         existing.forEach(row => {
           const email = row[emailIndex];
@@ -342,11 +342,11 @@ function listGroups(bypassETag = true) {
       });
 
       if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.GROUP_EMAILS.length).clearContent();
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).clearContent();
       }
 
-      sheet.getRange(2, 1, rows.length, HEADERS.GROUP_EMAILS.length).setValues(rows);
-      formatSheet(sheet, HEADERS.GROUP_EMAILS);
+      sheet.getRange(2, 1, rows.length, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).setValues(rows);
+      formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
 
       PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
       storeDataAndHash("GROUP_EMAILS", groupData);
