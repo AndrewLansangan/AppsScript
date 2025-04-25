@@ -18,6 +18,43 @@ function getScriptProperties() {
   cachedScriptProperties = properties;
   return properties;
 }
+/**
+ * Retrieves the CLIENT_ID from ScriptProperties.
+ * @return {string} The CLIENT_ID.
+ * @throws {Error} If CLIENT_ID is missing from ScriptProperties.
+ */
+function getClientId() {
+  try {
+    const clientId = getScriptProperties()["CLIENT_ID"];
+    if (!clientId) {
+      throw new Error("CLIENT_ID missing");
+    }
+    debugLog("CLIENT_ID retrieved successfully", clientId);
+    return clientId;
+  } catch (error) {
+    errorLog("Error fetching CLIENT_ID", error.message);
+    throw error;
+  }
+}
+
+/**
+ * Retrieves the CLIENT_SECRET from ScriptProperties.
+ * @return {string} The CLIENT_SECRET.
+ * @throws {Error} If CLIENT_SECRET is missing from ScriptProperties.
+ */
+function getClientSecret() {
+  try {
+    const clientSecret = getScriptProperties()["CLIENT_SECRET"];
+    if (!clientSecret) {
+      throw new Error("CLIENT_SECRET missing");
+    }
+    debugLog("CLIENT_SECRET retrieved successfully", clientSecret);
+    return clientSecret;
+  } catch (error) {
+    errorLog("Error fetching CLIENT_SECRET", error.message);
+    throw error;
+  }
+}
 
 function getDatatype(datatype) {
   return PropertiesService.getScriptProperties().getProperty(datatype);

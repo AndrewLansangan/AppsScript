@@ -211,18 +211,7 @@ function benchmark(label, fn) {
 // 🔐 Auth Header Utilities
 // ===========================
 
-let _cachedAccessToken = null;
 
-/**
- * Retrieves the OAuth token once per script execution.
- * @returns {string} OAuth access token
- */
-function getCachedAccessToken() {
-    if (!_cachedAccessToken) {
-        _cachedAccessToken = getAccessToken(); // Must be defined in auth.gs
-    }
-    return _cachedAccessToken;
-}
 /**
  * Builds headers with optional JSON and ETag support.
  * @param {Object} [options]

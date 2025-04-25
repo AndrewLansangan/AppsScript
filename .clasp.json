@@ -18,7 +18,8 @@
     "auth.js",
     "utils.js",
     "sheet.js",
-    "app.js"
+    "core-group.js",
+    "core-app.js"
   ],
   "skipSubdirectories": true
 }

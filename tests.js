@@ -40,3 +40,47 @@ function testSaveToSheet_modifiedTimestamp() {
     Logger.log(`📄 ${row.join(' | ')}`);
   });
 }
+function testHashSystem() {
+  const sampleGroups = [
+    {
+      email: 'test1@example.com',
+      settings: {
+        whoCanPostMessage: 'ANYONE_CAN_POST',
+        whoCanInvite: 'ALL_MANAGERS_CAN_INVITE'
+      }
+    },
+    {
+      email: 'test2@example.com',
+      settings: {
+        whoCanPostMessage: 'ALL_MEMBERS_CAN_POST',
+        whoCanInvite: 'OWNERS_ONLY'
+      }
+    }
+  ];
+
+  // Compute and store initial hashes
+  const originalHashMap = computeDualHashMap(sampleGroups);
+  saveDualHashMap(originalHashMap);
+
+  debugLog("✅ Step 1: Saved original hashes.");
+  Logger.log(originalHashMap);
+
+  // Simulate a change in one setting
+  const modifiedGroups = JSON.parse(JSON.stringify(sampleGroups));
+  modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
+
+  const newHashMap = computeDualHashMap(modifiedGroups);
+  logHashDifferences(newHashMap);
+  const changedEmails = getGroupsWithHashChanges(newHashMap);
+
+  debugLog("✅ Step 2: After modification");
+  Logger.log(newHashMap);
+  Logger.log("Detected changed groups: " + changedEmails.join(', '));
+
+  // Optionally, assert expected result
+  if (changedEmails.includes('test1@example.com') && !changedEmails.includes('test2@example.com')) {
+    debugLog("✅ Test passed: Change detection works as expected.");
+  } else {
+    errorLog("❌ Test failed: Hash change detection is not working as expected.");
+  }
+}
