@@ -223,30 +223,33 @@ function getCachedAccessToken() {
     }
     return _cachedAccessToken;
 }
-
 /**
- * Builds headers for GET/ETag-aware requests.
- * @param {string|null} etag - Optional ETag for conditional GET.
- * @returns {Object} Headers object
+ * Builds headers with optional JSON and ETag support.
+ * @param {Object} [options]
+ * @param {boolean} [options.json] - Whether to add Content-Type: application/json
+ * @param {string|null} [options.etag] - Optional ETag to include in If-None-Match
+ * @returns {Object} Headers
  */
-function getAuthHeaders(etag = null) {
+function buildAuthHeaders({ json = false, etag = null } = {}) {
     const headers = {
         Authorization: `Bearer ${getCachedAccessToken()}`
     };
-    if (etag) {
-        headers['If-None-Match'] = etag;
-    }
+    if (json) headers['Content-Type'] = 'application/json';
+    if (etag) headers['If-None-Match'] = etag;
     return headers;
 }
-
 /**
- * Builds headers for POST/PUT JSON requests.
- * @param {string|null} etag - Optional ETag.
- * @returns {Object} Headers with JSON content type.
+ * Normalizes a group object from the Directory API into your internal format.
+ * @param {Object} group - Raw group object from API
+ * @returns {Object} Normalized group object
  */
-function getAuthHeadersWithJson(etag = null) {
+function normalizeDirectoryGroup(group) {
     return {
-        ...getAuthHeaders(etag),
-        'Content-Type': 'application/json'
+        email: group.email,
+        name: group.name,
+        description: group.description,
+        directMembersCount: group.directMembersCount || 0,
+        adminCreated: group.adminCreated || false,
+        etag: group.etag || 'Not Found'
     };
 }

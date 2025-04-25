@@ -34,41 +34,46 @@ function fetchSingleGroupData(email) {
   }
 }
 
-function fetchAllGroupData(domain, bypassETag = true) {
+function fetchAllGroupData(domain, bypassETag = false) {
   const groups = [];
   let pageToken = null;
+  const topLevelETag = !bypassETag ? getDomainETag(domain) : null;
+  const headers = buildAuthHeaders({ etag: topLevelETag });
 
   do {
     let url = `${ADMIN_DIRECTORY_API_BASE_URL}?domain=${encodeURIComponent(domain)}`;
     if (pageToken) url += `&pageToken=${pageToken}`;
 
     const res = UrlFetchApp.fetch(url, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
+      headers,
       muteHttpExceptions: true
     });
 
     const status = res.getResponseCode();
+    if (status === 304) {
+      debugLog(`🔁 No changes for ${domain} — ETag matched.`);
+      return []; // or return cached version if desired
+    }
+
     if (status !== 200) {
       errorLog(`❌ Error fetching group list: ${res.getContentText()}`);
       return [];
     }
 
     const data = JSON.parse(res.getContentText());
-    const currentGroups = (data.groups || []).map(group => ({
-      email: group.email,
-      name: group.name,
-      description: group.description,
-      directMembersCount: group.directMembersCount || 0,
-      adminCreated: group.adminCreated || false,
-      etag: group.etag || 'Not Found'
-    }));
 
+    // ✅ Save new ETag after successful fetch
+    if (!bypassETag && data.etag) {
+      setDomainETag(domain, data.etag);
+    }
+
+    const currentGroups = (data.groups || []).map(normalizeDirectoryGroup);
     groups.push(...currentGroups);
     pageToken = data.nextPageToken;
   } while (pageToken);
-
   return groups;
 }
+
 
 function fetchGroupSettings(email) {
   const encodedEmail = encodeURIComponent(email);
