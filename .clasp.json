@@ -11,6 +11,14 @@
   "jsonExtensions": [
     ".json"
   ],
-  "filePushOrder": [],
-  "skipSubdirectories": false
+  "filePushOrder": [
+    "logging.js",
+    "constants.js",
+    "config.js",
+    "auth.js",
+    "utils.js",
+    "sheet.js",
+    "app.js"
+  ],
+  "skipSubdirectories": true
 }
