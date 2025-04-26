@@ -187,7 +187,7 @@ function doHeadersMatch(sheet, expectedHeaders) {
 function saveToSheet(hashMap) {
     debugLog(`Total entries in hashMap: ${Object.keys(hashMap).length} for saveToSheet()`);
 
-    const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_HASHES, HEADERS.HASHES);
+    const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_HASHES, HEADERS[SHEET_NAMES].HASHES);
     const oldMapRaw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
     const oldMap = oldMapRaw ? JSON.parse(oldMapRaw) : {};
 
@@ -276,4 +276,34 @@ function writeGroupListToSheet(groupData) {
 
     sheet.getRange(2, 1, rows.length, HEADERS.GROUP_EMAILS.length).setValues(rows);
     debugLog(`✅ Inserted ${rows.length} new rows into Group Emails sheet.`);
+}
+
+// ===================================================
+// ♻️ Safe Sheet Regeneration Script
+// ===================================================
+
+/**
+ * Fully regenerates all required sheets.
+ * - Creates sheets if missing
+ * - Adds headers if missing
+ * - Hides ETAG_CACHE sheet
+ * - Formats headers
+ * - No overwriting of real data
+ */
+function regenerateSheets() {
+    debugLog("♻️ Starting full sheet regeneration...");
+
+    try {
+        // --- Core Sheets Initialization ---
+        initializeSheets();       // Create core sheets like GROUP_EMAILS, GROUP_HASHES
+        setupReportSheets();      // Create report sheets like DISCREPANCIES, DETAIL_REPORT
+
+        // --- ETag Cache Initialization ---
+        getOrCreateEtagCacheSheet(); // Create ETAG_CACHE if missing
+
+        debugLog("✅ Sheet regeneration completed successfully.");
+    } catch (e) {
+        errorLog(`❌ Sheet regeneration failed: ${e.message}`);
+        throw e;
+    }
 }

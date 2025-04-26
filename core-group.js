@@ -45,7 +45,7 @@ function fetchAllGroupData(domain, bypassETag = false) {
 
         const data = JSON.parse(res.getContentText());
 
-        // ✅ Save new ETag after successful fetch
+        // ✅ Save domain-level ETag to detect future changes in group list
         if (!bypassETag && data.etag) {
             setDomainETag(domain, data.etag);
         }

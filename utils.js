@@ -233,6 +233,7 @@ function buildAuthHeaders({ json = false, etag = null } = {}) {
  * @returns {Object} Normalized group object
  */
 function normalizeDirectoryGroup(group) {
+    // normalizes the object after group.list
     return {
         email: group.email,
         name: group.name,
@@ -242,3 +243,9 @@ function normalizeDirectoryGroup(group) {
         etag: group.etag || 'Not Found'
     };
 }
+//
+function mapToHash(group) {
+    return {group: group.email, etag: group.etag}
+}
+
+const saveToHash=mapToHash(group)

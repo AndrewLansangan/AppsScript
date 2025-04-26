@@ -2,11 +2,31 @@
 // 🌐 App Entry Point and Workflows
 // ===========================
 
+/**
+ * Regenerates sheets only after user confirms.
+ */
+function regenerateSheetsWithConfirmation() {
+    const ui = SpreadsheetApp.getUi();
+    const response = ui.alert(
+        '⚠️ Confirm Sheet Regeneration',
+        'Are you sure you want to regenerate all required sheets? This will create missing sheets and headers but will NOT delete any existing data.',
+        ui.ButtonSet.YES_NO
+    );
+
+    if (response == ui.Button.YES) {
+        regenerateSheets();
+        ui.alert('✅ Sheet regeneration completed.');
+    } else {
+        ui.alert('❌ Sheet regeneration cancelled.');
+    }
+}
+
 //FIXME ❌ Error in listGroups: "Exception: You have exceeded the property storage quota. Please remove some properties and try again."
 function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
         try {
             const groupData = fetchAllGroupData(getWorkspaceDomain(), bypassETag);
+
 
             if (!Array.isArray(groupData) || groupData.length === 0) {
                 debugLog("No valid group data retrieved.");
