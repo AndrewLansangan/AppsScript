@@ -44,7 +44,7 @@ function fetchAllGroupData(domain, bypassETag = false) {
         }
 
         const data = JSON.parse(res.getContentText());
-
+        //FIXME REMOVE ETAGS FROM GROUPS
         // ✅ Save domain-level ETag to detect future changes in group list
         if (!bypassETag && data.etag) {
             setDomainETag(domain, data.etag);

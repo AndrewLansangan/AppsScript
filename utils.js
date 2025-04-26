@@ -243,9 +243,4 @@ function normalizeDirectoryGroup(group) {
         etag: group.etag || 'Not Found'
     };
 }
-//
-function mapToHash(group) {
-    return {group: group.email, etag: group.etag}
-}
 
-const saveToHash=mapToHash(group)
