@@ -8,6 +8,11 @@
 
 const ETAG_HEADERS = ["Email", "ETag"];
 
+Object.entries(SHEET_CONFIG).forEach(([name, headers]) => {
+    const sheet = getOrCreateSheet(name, headers);
+    if (sheet.getLastRow() === 0) sheet.appendRow(headers);
+});
+
 // ===========================
 // 📋 Sheet Initialization
 // ===========================

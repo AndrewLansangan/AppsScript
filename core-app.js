@@ -57,6 +57,8 @@ function listGroups(bypassETag = true) {
                 return [];
             }
 
+            const groupEmails = groupData.map(group => group.email);
+
             debugLog(`Fetched ${groupData.length} groups.`);
 
             if (!hasDataChanged("GROUP_EMAILS", groupData)) {
@@ -64,7 +66,6 @@ function listGroups(bypassETag = true) {
                 return groupData;
             }
 
-            const change = recordDomainETagChange(domain, oldEtag, newEtag)
             const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
             const now = new Date().toISOString();
 

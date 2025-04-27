@@ -262,3 +262,16 @@ function normalizeDirectoryGroup(group) {
         etag: group.etag || 'Not Found'
     };
 }
+
+/**
+ * Resolves the list of group emails from storage or source.
+ *
+ * @returns {string[]} Array of group email addresses
+ */
+function resolveGroupEmails() {
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS_DATA");
+    if (!raw) {
+        throw new Error("No group emails found in ScriptProperties.");
+    }
+    return JSON.parse(raw);
+}

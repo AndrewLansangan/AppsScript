@@ -63,15 +63,6 @@ const FORMATTING_CONFIG = {
 };
 
 // ===========================
-// ✅ Sheet Initialization
-// ===========================
-
-Object.entries(SHEET_CONFIG).forEach(([name, headers]) => {
-  const sheet = getOrCreateSheet(name, headers);
-  if (sheet.getLastRow() === 0) sheet.appendRow(headers);
-});
-
-// ===========================
 // 🔒 Security / Compliance Expectations
 // ===========================
 
