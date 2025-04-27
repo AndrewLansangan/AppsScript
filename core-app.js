@@ -13,7 +13,7 @@ function regenerateSheetsWithConfirmation() {
         ui.ButtonSet.YES_NO
     );
 
-    if (response == ui.Button.YES) {
+    if (response === ui.Button.YES) {
         regenerateSheets();
         ui.alert('✅ Sheet regeneration completed.');
     } else {
@@ -21,12 +21,36 @@ function regenerateSheetsWithConfirmation() {
     }
 }
 
+/**
+ * Fetches all directory groups for the domain, writes them to the GROUP_EMAILS sheet.
+ *
+ * ## Behavior:
+ * - Calls Admin Directory API to retrieve group list.
+ * - Normalizes group objects.
+ * - Detects changes via ETag and hash comparison.
+ * - Writes groups into Google Sheets if changes detected.
+ *
+ * ## Depends On:
+ * - `fetchAllGroupData(domain, bypassETag)`
+ * - `getWorkspaceDomain()`
+ * - `getOrCreateSheet(sheetName, headers)`
+ * - `formatSheet(sheet, headers)`
+ *
+ * ## Used By:
+ * - Directly called via user action (e.g., button in frontend UI, manual function execution)
+ *
+ * ## Supports:
+ * - `resolveGroupEmails()` → Uses GROUP_EMAILS sheet populated by this function.
+ * - `listGroupSettings()` → Reads emails from GROUP_EMAILS.
+ *
+ * @param {boolean} [bypassETag=true] - If true, forces fetching even if ETag matches.
+ * @returns {{result: *, duration: number, error?: string}} Array of normalized groups.
+ */
 //FIXME ❌ Error in listGroups: "Exception: You have exceeded the property storage quota. Please remove some properties and try again."
 function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
         try {
             const groupData = fetchAllGroupData(getWorkspaceDomain(), bypassETag);
-
 
             if (!Array.isArray(groupData) || groupData.length === 0) {
                 debugLog("No valid group data retrieved.");
@@ -40,6 +64,7 @@ function listGroups(bypassETag = true) {
                 return groupData;
             }
 
+            const change = recordDomainETagChange(domain, oldEtag, newEtag)
             const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
             const now = new Date().toISOString();
 
@@ -102,7 +127,7 @@ function listGroupSettings() {
     return benchmark("listGroupSettings", () => {
         const groupEmails = resolveGroupEmails(); // ✅ handles sheet → script → fallback
 
-        const { changed, all, errored } = fetchAllGroupSettings(groupEmails);
+        const {changed, all, errored} = fetchAllGroupSettings(groupEmails);
         if (!Array.isArray(all) || all.length === 0) {
             debugLog("❌ No group settings fetched.");
             return [];
@@ -152,12 +177,11 @@ function listGroupSettings() {
     });
 }
 
-
 function updateGroupSettings() {
     const violations = getDiscrepancyRowsFromSheet(); // step 1
     const updates = [];
 
-    violations.forEach(({ email, key, expected }) => {
+    violations.forEach(({email, key, expected}) => {
         if (!email || !key || expected === undefined) return;
 
         if (!updates[email]) updates[email] = {};
@@ -183,15 +207,21 @@ function updateGroupSettings() {
             const responseBody = response.getContentText();
             if (status >= 200 && status < 300) {
                 debugLog(`✅ Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
-                results.push({ email, status, keys: Object.keys(updatePayload), success: true });
+                results.push({email, status, keys: Object.keys(updatePayload), success: true});
             } else {
                 errorLog(`❌ Failed to update ${email}: ${responseBody}`);
-                results.push({ email, status, keys: Object.keys(updatePayload), success: false, error: responseBody });
+                results.push({
+                    email,
+                    status,
+                    keys: Object.keys(updatePayload),
+                    success: false,
+                    error: responseBody
+                });
             }
 
         } catch (err) {
             errorLog(`❌ Exception while updating ${email}`, err.toString());
-            results.push({ email, success: false, error: err.toString() });
+            results.push({email, success: false, error: err.toString()});
         }
     });
 

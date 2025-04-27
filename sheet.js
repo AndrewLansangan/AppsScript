@@ -307,3 +307,30 @@ function regenerateSheets() {
         throw e;
     }
 }
+
+/**
+ * Records a domain-level ETag change event into the Domain ETags Log sheet.
+ *
+ * ## Behavior:
+ * - Appends a new row with Domain, Old ETag, New ETag, and Timestamp.
+ *
+ * ## Depends On:
+ * - getOrCreateSheet(sheetName, optionalHeaders)
+ * - formatSheet(sheet, headers)
+ *
+ * @param {string} domain - The Workspace domain (e.g., "grey-box.ca").
+ * @param {string} oldETag - The previous domain ETag value.
+ * @param {string} newETag - The new domain ETag value.
+ */
+function recordDomainETagChange(domain, oldETag, newETag) {
+    const sheet = getOrCreateSheet(
+        SHEET_NAMES.DOMAIN_ETAGS_LOG,
+        ['Domain', 'Old ETag', 'New ETag', 'Timestamp']
+    );
+
+    const timestamp = new Date().toISOString();
+    const row = [domain, oldETag, newETag, timestamp];
+
+    sheet.appendRow(row);
+    debugLog(`📝 Recorded domain ETag change for ${domain}`);
+}

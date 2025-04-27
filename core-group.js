@@ -15,13 +15,52 @@ function fetchSingleGroupData(email) {
         return null;
     }
 }
+/**
+ * Fetches all Google Workspace Directory groups for a given domain and normalizes them into internal structure.
+ *
+ * ## Behavior:
+ * - Sends a request to the Admin SDK Directory API to list groups for the domain.
+ * - Optionally includes an `If-None-Match` ETag header to avoid unnecessary fetching.
+ * - Automatically paginates through all groups using `nextPageToken`.
+ * - Normalizes the raw API response into `NormalizedDirectoryGroup` objects.
+ * - Updates the stored domain ETag after successful fetch.
+ *
+ * ## Dependencies:
+ * - `getDomainETag(domain)`: Retrieves previously stored domain ETag.
+ * - `setDomainETag(domain, etag)`: Saves new ETag after fetching.
+ * - `buildAuthHeaders({ etag })`: Constructs authorization headers with optional ETag.
+ * - `normalizeDirectoryGroup(group)`: Converts a raw API group into internal normalized format.
+ * - `ADMIN_DIRECTORY_API_BASE_URL`: Base URL constant for the Admin Directory API.
+ *
+ * ## Side Effects:
+ * - Reads from ScriptProperties (`DOMAIN_ETAGS` property) using `getDomainETag`.
+ * - Writes to ScriptProperties (`DOMAIN_ETAGS` property) using `setDomainETag` if new ETag is present.
+ *
+ * ## Parameters:
+ * @param {string} domain - The Workspace domain for which to fetch groups (e.g., "grey-box.ca").
+ * @param {boolean} [bypassETag=false] - If true, skips ETag checking and always fetches fresh data.
+ *
+ * ## Returns:
+ * @returns {NormalizedDirectoryGroup[]} Array of normalized group objects with the following structure:
+ * - `email {string}` — Group's email address.
+ * - `name {string}` — Group's name.
+ * - `description {string}` — Group's description.
+ * - `directMembersCount {number}` — Number of direct members in the group.
+ * - `adminCreated {boolean}` — Whether the group was created by an admin.
+ * - `etag {string}` — The ETag returned from the API or "Not Found" if missing.
+ *
+ * ## Notes:
+ * - If the ETag matches and no changes are detected (HTTP 304), the function returns an empty array `[]`.
+ * - If an API error occurs (non-200 response), logs the error and returns an empty array `[]`.
+ */
 
 function fetchAllGroupData(domain, bypassETag = false) {
     //empty array to
     const groups = [];
     let pageToken = null;
-    const topLevelETag = !bypassETag ? getDomainETag(domain) : null;
-    const headers = buildAuthHeaders({etag: topLevelETag});
+    const oldDomainETag = !bypassETag ? getDomainETag(domain) : null;
+
+    const headers = buildAuthHeaders({etag: oldDomainETag});
 
     do {
         let url = `${ADMIN_DIRECTORY_API_BASE_URL}?domain=${encodeURIComponent(domain)}`;
@@ -44,10 +83,14 @@ function fetchAllGroupData(domain, bypassETag = false) {
         }
 
         const data = JSON.parse(res.getContentText());
+        const newDomainETag = data.etag || null
         //FIXME REMOVE ETAGS FROM GROUPS
         // ✅ Save domain-level ETag to detect future changes in group list
-        if (!bypassETag && data.etag) {
-            setDomainETag(domain, data.etag);
+        if (!bypassETag && newDomainETag) {
+            if (oldDomainETag && oldDomainETag !== newDomainETag) {
+                recordDomainETagChange(domain, oldDomainETag, newDomainETag);
+            }
+            setDomainETag(domain, newDomainETag);
         }
 
         const currentGroups = (data.groups || []).map(normalizeDirectoryGroup);

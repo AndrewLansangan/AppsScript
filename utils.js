@@ -2,6 +2,15 @@
 // 🔧 UTILS MODULE — General Helpers & Hashing Logic
 // ===================================================
 
+/**
+ * @typedef {Object} NormalizedDirectoryGroup
+ * @property {string} email - Group's email address.
+ * @property {string} name - Group's display name.
+ * @property {string} description - Group's description.
+ * @property {number} directMembersCount - Number of direct members.
+ * @property {boolean} adminCreated - Whether the group was admin-created.
+ * @property {string} etag - API ETag for the group. Is used in @listGroups()
+ */
 
 // ===========================
 // 🔄 Array & String Utilities
@@ -41,6 +50,17 @@ function hashData(groupData) {
     }
 
     const sorted = [...groupData].sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+    const json = JSON.stringify(sorted);
+    const digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json);
+    return byteArrayToHex(digestBytes);
+}
+
+function hashNormalizedDirectoryGroupData(groups) {
+    if (!Array.isArray(groups) || groups.length === 0) {
+        throw new Error('Invalid input: Expected a non-empty array of normalized group objects.');
+    }
+
+    const sorted = [...groups].sort((a, b) => (a.email || '').localeCompare(b.email || ''));
     const json = JSON.stringify(sorted);
     const digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json);
     return byteArrayToHex(digestBytes);
@@ -228,12 +248,11 @@ function buildAuthHeaders({ json = false, etag = null } = {}) {
     return headers;
 }
 /**
- * Normalizes a group object from the Directory API into your internal format.
- * @param {Object} group - Raw group object from API
- * @returns {Object} Normalized group object
+ * Converts a raw Directory API group object into a NormalizedDirectoryGroup.
+ * @param {Object} group - Raw group object from Admin Directory API.
+ * @returns {NormalizedDirectoryGroup} Normalized group object.
  */
 function normalizeDirectoryGroup(group) {
-    // normalizes the object after group.list
     return {
         email: group.email,
         name: group.name,
@@ -243,4 +262,3 @@ function normalizeDirectoryGroup(group) {
         etag: group.etag || 'Not Found'
     };
 }
-
