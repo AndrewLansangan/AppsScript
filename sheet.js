@@ -339,3 +339,28 @@ function recordDomainETagChange(domain, oldETag, newETag) {
     sheet.appendRow(row);
     debugLog(`📝 Recorded domain ETag change for ${domain}`);
 }
+
+/**
+ * Logs a structured event into the "Events" sheet.
+ *
+ * Each entry includes:
+ * - Timestamp
+ * - Event Type (e.g. "GroupList")
+ * - Target (e.g. "all groups")
+ * - Action (e.g. "Fetched & Updated")
+ * - Hash or ID (optional for integrity tracking)
+ * - Notes (any additional info)
+ *
+ * @param {string} type - Category of the event (e.g. 'GroupList', 'SettingsChange')
+ * @param {string} target - Entity affected (e.g. 'all groups', 'group@example.com')
+ * @param {string} action - Description of the operation (e.g. 'Fetched & Updated')
+ * @param {string} hash - A hash or identifier (e.g. content hash, ID)
+ * @param {string} [notes=''] - Optional human-readable comment
+ */
+function logEventToSheet(type, target, action, hash, notes = '') {
+    const sheet = getOrCreateSheet('Events', ['Date', 'Type', 'Target', 'Action', 'Hash', 'Notes']);
+    const now = new Date().toISOString();
+
+    sheet.appendRow([now, type, target, action, hash, notes]);
+    debugLog(`📝 Logged event: ${type} → ${action} → ${target}`);
+}

@@ -21,55 +21,35 @@ function regenerateSheetsWithConfirmation() {
     }
 }
 
-/**
- * Fetches all directory groups for the domain, writes them to the GROUP_EMAILS sheet.
- *
- * ## Behavior:
- * - Calls Admin Directory API to retrieve group list.
- * - Normalizes group objects.
- * - Detects changes via ETag and hash comparison.
- * - Writes groups into Google Sheets if changes detected.
- *
- * ## Depends On:
- * - `fetchAllGroupData(domain, bypassETag)`
- * - `getWorkspaceDomain()`
- * - `getOrCreateSheet(sheetName, headers)`
- * - `formatSheet(sheet, headers)`
- *
- * ## Used By:
- * - Directly called via user action (e.g., button in frontend UI, manual function execution)
- *
- * ## Supports:
- * - `resolveGroupEmails()` → Uses GROUP_EMAILS sheet populated by this function.
- * - `listGroupSettings()` → Reads emails from GROUP_EMAILS.
- *
- * @param {boolean} [bypassETag=true] - If true, forces fetching even if ETag matches.
- * @returns {{result: *, duration: number, error?: string}} Array of normalized groups.
- */
-//FIXME ❌ Error in listGroups: "Exception: You have exceeded the property storage quota. Please remove some properties and try again."
+
 function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
         try {
-            const groupData = fetchAllGroupData(getWorkspaceDomain(), bypassETag);
+            const domain = getWorkspaceDomain();
+            const groupData = fetchAllGroupData(domain, bypassETag);
 
             if (!Array.isArray(groupData) || groupData.length === 0) {
-                debugLog("No valid group data retrieved.");
+                debugLog("❌ No valid group data retrieved.");
                 return [];
             }
 
-            const groupEmails = groupData.map(group => group.email);
-
-            debugLog(`Fetched ${groupData.length} groups.`);
-
             if (!hasDataChanged("GROUP_EMAILS", groupData)) {
-                debugLog("✅ No changes in group data. Skipping processing.");
+                debugLog("✅ No changes in group data. Skipping save.");
                 return groupData;
             }
 
+            // Save updated state
+            saveGroupEmails(groupData);
+            const hash = hashGroupList(groupData);
+            PropertiesService.getScriptProperties().setProperty(
+                "GROUP_EMAILS_HASH",
+                hash);
+logEvent
+            writeGroupListToSheet(groupData);
+
             const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
             const now = new Date().toISOString();
-
-            const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
+            const oldETagMap = getStoredData("GROUP_ETAGS") || {};
             const modifiedMap = {};
 
             if (sheet.getLastRow() > 1) {
@@ -85,7 +65,6 @@ function listGroups(bypassETag = true) {
             }
 
             const newETagMap = {};
-
             const rows = groupData.map(group => {
                 const oldETag = oldETagMap[group.email] || '';
                 const newETag = group.etag || 'Not Found';
@@ -113,7 +92,6 @@ function listGroups(bypassETag = true) {
             formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
 
             PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
-            storeDataAndHash("GROUP_EMAILS", groupData);
 
             debugLog(`✅ Processed and saved ${rows.length} groups.`);
             return groupData;
@@ -123,6 +101,7 @@ function listGroups(bypassETag = true) {
         }
     });
 }
+
 
 function listGroupSettings() {
     return benchmark("listGroupSettings", () => {

@@ -4,214 +4,33 @@
 
 /**
  * @typedef {Object} NormalizedDirectoryGroup
- * @property {string} email - Group's email address.
- * @property {string} name - Group's display name.
- * @property {string} description - Group's description.
- * @property {number} directMembersCount - Number of direct members.
- * @property {boolean} adminCreated - Whether the group was admin-created.
- * @property {string} etag - API ETag for the group. Is used in @listGroups()
+ * @property {string} email
+ * @property {string} name
+ * @property {string} description
+ * @property {number} directMembersCount
+ * @property {boolean} adminCreated
+ * @property {string} etag
  */
 
 // ===========================
-// 🔄 Array & String Utilities
+// 🔄 Shared Utility Functions
 // ===========================
 
-/**
- * Converts a byte array to a hexadecimal string.
- * @param {number[]} bytes - The byte array to convert.
- * @returns {string} Hexadecimal representation.
- */
 function byteArrayToHex(bytes) {
     return bytes.map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Extracts a list of email addresses from a group response JSON.
- * @param {{ groups: { email: string }[] }} json - Directory API response object.
- * @returns {string[]} List of group email addresses.
- */
-function getEmailArray(json) {
-    return json.groups.map(group => group.email);
+function normalizeDirectoryGroup(group) {
+    return {
+        email: group.email,
+        name: group.name,
+        description: group.description,
+        directMembersCount: group.directMembersCount || 0,
+        adminCreated: group.adminCreated || false,
+        etag: group.etag || 'Not Found'
+    };
 }
 
-
-// ===========================
-// 🔒 Hash & Change Detection
-// ===========================
-
-/**
- * Generates an MD5 hash of the sorted group data array.
- * @param {Object[]} groupData - Array of group objects with at least an `email` property.
- * @returns {string} MD5 hash in hex format.
- */
-function hashData(groupData) {
-    if (!Array.isArray(groupData) || groupData.length === 0) {
-        throw new Error('Invalid input: groupData should be a non-empty array');
-    }
-
-    const sorted = [...groupData].sort((a, b) => (a.email || '').localeCompare(b.email || ''));
-    const json = JSON.stringify(sorted);
-    const digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json);
-    return byteArrayToHex(digestBytes);
-}
-
-function hashNormalizedDirectoryGroupData(groups) {
-    if (!Array.isArray(groups) || groups.length === 0) {
-        throw new Error('Invalid input: Expected a non-empty array of normalized group objects.');
-    }
-
-    const sorted = [...groups].sort((a, b) => (a.email || '').localeCompare(b.email || ''));
-    const json = JSON.stringify(sorted);
-    const digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json);
-    return byteArrayToHex(digestBytes);
-}
-
-/**
- * Compares new data hash to stored hash to detect changes.
- * @param {string} dataType - Key for the data type.
- * @param {Object[]} newData - The new dataset to hash.
- * @returns {boolean} True if the hash has changed.
- */
-function hasDataChanged(dataType, newData) {
-    const storedHash = PropertiesService.getScriptProperties().getProperty(`${dataType}_DATA_HASH`);
-    const newHash = hashData(newData);
-    return storedHash !== newHash;
-}
-
-/**
- * Stores both the raw data and its hash in ScriptProperties.
- * @param {string} dataType - Key for the data type.
- * @param {Object[]} newData - The data to store and hash.
- */
-function storeDataAndHash(dataType, newData) {
-    const hash = hashData(newData);
-    const props = PropertiesService.getScriptProperties();
-    props.setProperty(`${dataType}_DATA`, JSON.stringify(newData));
-    props.setProperty(`${dataType}_DATA_HASH`, hash);
-    debugLog(`📂 Stored ${dataType} data with hash.`);
-}
-
-/**
- * Retrieves the last stored dataset.
- * @param {string} dataType - Key for the data type.
- * @returns {Object[]|null} Parsed dataset or null.
- */
-function getStoredData(dataType) {
-    const raw = PropertiesService.getScriptProperties().getProperty(`${dataType}_DATA`);
-    return raw ? JSON.parse(raw) : null;
-}
-
-/**
- * Retrieves the last stored hash.
- * @param {string} dataType - Key for the data type.
- * @returns {string|null} Hash string or null.
- */
-function getStoredHash(dataType) {
-    return PropertiesService.getScriptProperties().getProperty(`${dataType}_DATA_HASH`) || null;
-}
-
-/**
- * Removes invalid legacy Java-style hash values.
- * @param {string} dataType - Key for the data type.
- */
-function cleanupLegacyHash(dataType) {
-    const raw = PropertiesService.getScriptProperties().getProperty(`${dataType}_DATA_HASH`);
-    if (raw?.startsWith("[Ljava.lang.Object;")) {
-        PropertiesService.getScriptProperties().deleteProperty(`${dataType}_DATA_HASH`);
-        debugLog(`🪚 Removed invalid legacy hash for ${dataType}`);
-    }
-}
-
-
-// ===========================
-// 🧪 Dual Hashing for Group Settings
-// ===========================
-
-/**
- * Computes both business and full hash for group settings.
- * @param {Object} settings - Raw group settings.
- * @returns {{ businessHash: string, fullHash: string }} Hash pair.
- */
-function computeDualGroupSettingsHash(settings) {
-    const keysToTrack = Object.keys(UPDATED_SETTINGS).sort();
-    const relevant = {};
-    keysToTrack.forEach(k => relevant[k] = settings[k] ?? null);
-
-    const businessHash = Utilities.base64Encode(
-        Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, JSON.stringify(relevant))
-    );
-
-    const cloned = { ...settings };
-    delete cloned.etag;
-
-    const normalized = {};
-    Object.keys(cloned).sort().forEach(k => normalized[k] = cloned[k]);
-
-    const fullHash = Utilities.base64Encode(
-        Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, JSON.stringify(normalized))
-    );
-
-    return { businessHash, fullHash };
-}
-
-/**
- * Builds a hash map for multiple group entries.
- * @param {{ email: string, settings: Object }[]} entries
- * @returns {Object<string, { businessHash: string, fullHash: string }>}
- */
-function computeDualHashMap(entries) {
-    const hashMap = {};
-    entries.forEach(({ email, settings }) => {
-        if (!email || !settings) return;
-        hashMap[email] = computeDualGroupSettingsHash(settings);
-    });
-    return hashMap;
-}
-
-/**
- * Returns a list of group emails with changed hashes.
- * @param {Object<string, { businessHash: string, fullHash: string }>} newMap
- * @returns {string[]} List of changed email addresses.
- */
-function getGroupsWithHashChanges(newMap) {
-    const oldMap = getStoredDualHashMap();
-    return Object.entries(newMap).reduce((changed, [email, newHashes]) => {
-        const old = oldMap[email] || {};
-        if (newHashes.businessHash !== old.businessHash || newHashes.fullHash !== old.fullHash) {
-            changed.push(email);
-        }
-        return changed;
-    }, []);
-}
-
-/**
- * Saves the dual hash map to ScriptProperties.
- * @param {Object} hashMap
- */
-function saveDualHashMap(hashMap) {
-    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
-}
-
-/**
- * Retrieves the saved dual hash map.
- * @returns {Object<string, { businessHash: string, fullHash: string }>}
- */
-function getStoredDualHashMap() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
-    return raw ? JSON.parse(raw) : {};
-}
-
-
-// ===========================
-// ⏱️ Benchmarking
-// ===========================
-
-/**
- * Measures and logs the execution time of a function.
- * @param {string} label - Log label.
- * @param {Function} fn - Function to benchmark.
- * @returns {{ result: any, duration: number, error?: string }}
- */
 function benchmark(label, fn) {
     const start = new Date();
     try {
@@ -226,52 +45,157 @@ function benchmark(label, fn) {
     }
 }
 
+// ================================================
+// 📁 Group List Hashing
+// ================================================
 
-// ===========================
-// 🔐 Auth Header Utilities
-// ===========================
+function hashGroupList(dataArray) {
+    if (!Array.isArray(dataArray) || dataArray.length === 0) {
+        throw new Error('Invalid input: expected a non-empty array of group objects');
+    }
 
-
-/**
- * Builds headers with optional JSON and ETag support.
- * @param {Object} [options]
- * @param {boolean} [options.json] - Whether to add Content-Type: application/json
- * @param {string|null} [options.etag] - Optional ETag to include in If-None-Match
- * @returns {Object} Headers
- */
-function buildAuthHeaders({ json = false, etag = null } = {}) {
-    const headers = {
-        Authorization: `Bearer ${getCachedAccessToken()}`
-    };
-    if (json) headers['Content-Type'] = 'application/json';
-    if (etag) headers['If-None-Match'] = etag;
-    return headers;
-}
-/**
- * Converts a raw Directory API group object into a NormalizedDirectoryGroup.
- * @param {Object} group - Raw group object from Admin Directory API.
- * @returns {NormalizedDirectoryGroup} Normalized group object.
- */
-function normalizeDirectoryGroup(group) {
-    return {
+    const groupList = dataArray.map(group => ({
         email: group.email,
         name: group.name,
         description: group.description,
         directMembersCount: group.directMembersCount || 0,
-        adminCreated: group.adminCreated || false,
-        etag: group.etag || 'Not Found'
-    };
+        adminCreated: group.adminCreated || false
+    }));
+
+    const sorted = groupList.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+    const json = JSON.stringify(sorted);
+    return byteArrayToHex(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json));
 }
 
-/**
- * Resolves the list of group emails from storage or source.
- *
- * @returns {string[]} Array of group email addresses
- */
-function resolveGroupEmails() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS_DATA");
-    if (!raw) {
-        throw new Error("No group emails found in ScriptProperties.");
+function hasDataChanged(dataType, newData) {
+    return getStoredHash(dataType) !== hashGroupList(newData);
+}
+
+// ======================================================
+// 🛡️ Settings Hashing
+// ======================================================
+
+function generateGroupSettingsHashPair(settings) {
+    const keysToTrack = Object.keys(UPDATED_SETTINGS).sort();
+    const businessData = {};
+    keysToTrack.forEach(k => (businessData[k] = settings[k] ?? null));
+
+    const businessHash = Utilities.base64Encode(
+        Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, JSON.stringify(businessData))
+    );
+
+    const fullData = { ...settings };
+    delete fullData.etag;
+    const normalized = {};
+    Object.keys(fullData).sort().forEach(k => (normalized[k] = fullData[k]));
+
+    const fullHash = Utilities.base64Encode(
+        Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, JSON.stringify(normalized))
+    );
+
+    return { businessHash, fullHash };
+}
+
+function generateGroupSettingsHashMap(entries) {
+    const hashMap = {};
+    entries.forEach(({ email, settings }) => {
+        if (email && settings) hashMap[email] = generateGroupSettingsHashPair(settings);
+    });
+    return hashMap;
+}
+
+function getGroupsWithHashChanges(newMap) {
+    const oldMap = loadGroupSettingsHashMap();
+    return Object.entries(newMap).reduce((changed, [email, newHashes]) => {
+        const old = oldMap[email] || {};
+        if (newHashes.businessHash !== old.businessHash || newHashes.fullHash !== old.fullHash) {
+            changed.push(email);
+        }
+        return changed;
+    }, []);
+}
+
+// ===========================
+// 💾 Storage: ScriptProperties
+// ===========================
+
+function getStoredHash(dataType) {
+    return PropertiesService.getScriptProperties().getProperty(`${dataType}_HASH`) || null;
+}
+
+function getStoredData(dataType) {
+    const raw = PropertiesService.getScriptProperties().getProperty(`${dataType}`);
+    return raw ? JSON.parse(raw) : null;
+}
+
+function saveGroupEmails(groupData) {
+    if (!Array.isArray(groupData)) {
+        throw new Error('Invalid input: expected an array of group objects');
     }
-    return JSON.parse(raw);
+
+    const groupEmails = getEmailArray(groupData);
+
+    PropertiesService.getScriptProperties().setProperty(
+        "GROUP_EMAILS",
+        JSON.stringify(groupEmails)
+    );
+
+    debugLog(`💾 Saved ${groupEmails.length} group emails into ScriptProperties.`);
+}
+
+function loadGroupEmails() {
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
+    if (!raw) return [];
+
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        errorLog("❌ Failed to parse GROUP_EMAILS", e.toString());
+        return [];
+    }
+}
+
+function loadGroupSettingsHashMap() {
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
+    return raw ? JSON.parse(raw) : {};
+}
+
+function storeGroupSettingsHashMap(hashMap) {
+    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
+}
+
+// ===========================
+// 🧩 Optional Cleanup
+// ===========================
+
+function cleanupLegacyHash(dataType) {
+    const raw = getStoredHash(dataType);
+    if (raw?.startsWith("[Ljava.lang.Object;")) {
+        PropertiesService.getScriptProperties().deleteProperty(`${dataType}_DATA_HASH`);
+        debugLog(`🪚 Removed invalid legacy hash for ${dataType}`);
+    }
+}
+
+// ===========================
+// ⚙️ API Utilities
+// ===========================
+
+function buildAuthHeaders({ json = false, etag = null } = {}) {
+    const headers = { Authorization: `Bearer ${getCachedAccessToken()}` };
+    if (json) headers['Content-Type'] = 'application/json';
+    if (etag) headers['If-None-Match'] = etag;
+    return headers;
+}
+
+function fetchWithDefaults(url, options = {}) {
+    const finalOptions = {
+        muteHttpExceptions: true,
+        ...options
+    };
+
+    return UrlFetchApp.fetch(url, finalOptions);
+}
+
+function getEmailArray(groups) {
+    return groups.map(group => group.email).filter(email => !!email);
 }
