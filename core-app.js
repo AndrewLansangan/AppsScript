@@ -104,9 +104,10 @@ function listGroups(bypassETag = true) {
     });
 }
 
-
+//TODO
 function listGroupSettings() {
     return benchmark("listGroupSettings", () => {
+        //FIXME groupEmails aren't retrieving emails. It has to get the data from the ScriptProperties or reading it from the sheet group_emails.
         const groupEmails = resolveGroupEmails(); // ✅ handles sheet → script → fallback
 
         const {changed, all, errored} = fetchAllGroupSettings(groupEmails);
@@ -124,7 +125,7 @@ function listGroupSettings() {
         const newHashMap = computeDualHashMap(validForHashing);
 
         logHashDifferences(newHashMap);
-        saveDualHashMap(newHashMap);
+        storeGroupSettingsHashMap(newHashMap);
         debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
         if (validForHashing.length > 0) {
