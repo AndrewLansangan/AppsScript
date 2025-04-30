@@ -44,7 +44,9 @@ function listGroups(bypassETag = true) {
             PropertiesService.getScriptProperties().setProperty(
                 "GROUP_EMAILS_HASH",
                 hash);
-logEvent
+
+// ✅ Log the event (optional, for tracking/auditing)
+            logEventToSheet('GroupList', 'all groups', 'Fetched & Updated', hash, `Fetched ${groupData.length} groups`);
             writeGroupListToSheet(groupData);
 
             const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
