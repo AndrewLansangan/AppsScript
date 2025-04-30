@@ -2,7 +2,7 @@ function fetchSingleGroupData(email) {
     const url = `${API_URLS.group}${encodeURIComponent(email)}`;
     try {
         const res = UrlFetchApp.fetch(url, {
-            headers: {Authorization: `Bearer ${TOKEN}`},
+            headers: buildAuthHeaders(),
             muteHttpExceptions: true
         });
 
@@ -15,6 +15,7 @@ function fetchSingleGroupData(email) {
         return null;
     }
 }
+
 /**
  * Fetches all Google Workspace Directory groups for a given domain and normalizes them into internal structure.
  *
@@ -84,6 +85,7 @@ function fetchAllGroupData(domain, bypassETag = false) {
 
         const data = JSON.parse(res.getContentText());
         const newDomainETag = data.etag || null
+
         //FIXME REMOVE ETAGS FROM GROUPS
         // ✅ Save domain-level ETag to detect future changes in group list
         if (!bypassETag && newDomainETag) {
@@ -100,14 +102,11 @@ function fetchAllGroupData(domain, bypassETag = false) {
     return groups;
 }
 
-
 function fetchGroupSettings(email) {
     const encodedEmail = encodeURIComponent(email);
     const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodedEmail}?alt=json`;
+    const headers = buildAuthHeaders();
 
-    const headers = {
-        Authorization: `Bearer ${TOKEN}`,
-    };
 
     try {
         const res = UrlFetchApp.fetch(url, {
@@ -130,11 +129,14 @@ function fetchGroupSettings(email) {
         }
 
         const data = JSON.parse(contentText);
-        const {businessHash, fullHash} = computeDualGroupSettingsHash(data);
+        const {businessHash, fullHash} = generateGroupSettingsHashPair(data);
 
-        const rawMap = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
-        const hashMap = rawMap ? JSON.parse(rawMap) : {};
+        // const rawMap = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
+        const hashMap = loadGroupSettingsHashMap();
         const old = hashMap[email] || {};
+        //
+        // const hashMap = rawMap ? JSON.parse(rawMap) : {};
+        // const old = hashMap[email] || {};
 
         let businessUnchanged = true;
         let fullUnchanged = true;
@@ -176,6 +178,8 @@ function fetchGroupSettings(email) {
                 unchanged: true
             };
         }
+        hashMap[email] = { businessHash, fullHash };
+        storeGroupSettingsHashMap(hashMap);
 
         return {
             email,
@@ -208,8 +212,6 @@ function fetchAllGroupSettings(emails, useGlobalHashCheck = false) {
     if (!Array.isArray(emails) || emails.length === 0) {
         return {all: [], changed: [], unchanged: [], errored: []};
     }
-
-    // TODO: Add benchmarking (start timer here if timing is needed)
 
     const all = [];
     const changed = [];
@@ -291,7 +293,7 @@ function filterGroupSettings(groupSettingsData) {
         const {email, settings = {}} = entry;
         if (!email || entry.unchanged || entry.error) return;
 
-        const {businessHash} = computeDualGroupSettingsHash(settings);
+        const {businessHash} = generateGroupSettingsHashPair(settings);
 
         Object.entries(UPDATED_SETTINGS).forEach(([key, expectedValue]) => {
             const actualValue = settings[key];

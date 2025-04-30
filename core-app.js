@@ -46,6 +46,7 @@ function regenerateSheetsWithConfirmation() {
  * @param {boolean} [bypassETag=true] - If true, forces fetching even if ETag matches.
  * @returns {{result: *, duration: number, error?: string}} Array of normalized groups.
  */
+//TODO create a event tracking -  based on hash mismatch and etags sheet
 //FIXME ❌ Error in listGroups: "Exception: You have exceeded the property storage quota. Please remove some properties and try again."
 function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
@@ -56,15 +57,17 @@ function listGroups(bypassETag = true) {
                 debugLog("No valid group data retrieved.");
                 return [];
             }
-
+//FIXME groupEmails not being used?
             const groupEmails = groupData.map(group => group.email);
 
             debugLog(`Fetched ${groupData.length} groups.`);
-
+//FIXME create a new hash Detection function
             if (!hasDataChanged("GROUP_EMAILS", groupData)) {
                 debugLog("✅ No changes in group data. Skipping processing.");
                 return groupData;
             }
+
+            logEventToSheet('GroupList', 'all groups', 'Fetched & Updated', newHash, `Fetched ${groupData.length} groups`);
 
             const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
             const now = new Date().toISOString();
@@ -111,7 +114,7 @@ function listGroups(bypassETag = true) {
 
             sheet.getRange(2, 1, rows.length, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).setValues(rows);
             formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
-
+//FIXME use a reusable function for saving and setting properties.
             PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
             storeDataAndHash("GROUP_EMAILS", groupData);
 
@@ -140,10 +143,10 @@ function listGroupSettings() {
 
         // 🔐 Step 4: Generate hash map only for entries that have hashes
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
-        const newHashMap = computeDualHashMap(validForHashing);
+        const newHashMap = generateGroupSettingsHashMap(validForHashing);
 
         logHashDifferences(newHashMap);
-        saveDualHashMap(newHashMap);
+        storeGroupSettingsHashMap(newHashMap);
         debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
         if (validForHashing.length > 0) {

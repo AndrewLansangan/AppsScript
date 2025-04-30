@@ -339,3 +339,10 @@ function recordDomainETagChange(domain, oldETag, newETag) {
     sheet.appendRow(row);
     debugLog(`📝 Recorded domain ETag change for ${domain}`);
 }
+
+function logEventToSheet(eventType, target, action, hash, notes = '') {
+    const sheet = getOrCreateSheet('Events', ['Date', 'Type', 'Target', 'Action', 'Hash', 'Notes']);
+    const now = new Date().toISOString();
+
+    sheet.appendRow([now, eventType, target, action, hash, notes]);
+}
