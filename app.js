@@ -104,7 +104,7 @@
 //     }
 //
 //     const data = JSON.parse(contentText);
-//     const { businessHash, fullHash } = computeDualGroupSettingsHash(data);
+//     const { businessHash, fullHash } = generateGroupSettingsHashPair(data);
 //
 //     const rawMap = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
 //     const hashMap = rawMap ? JSON.parse(rawMap) : {};
@@ -265,7 +265,7 @@
 //     const { email, settings = {} } = entry;
 //     if (!email || entry.unchanged || entry.error) return;
 //
-//     const { businessHash } = computeDualGroupSettingsHash(settings);
+//     const { businessHash } = generateGroupSettingsHashPair(settings);
 //
 //     Object.entries(UPDATED_SETTINGS).forEach(([key, expectedValue]) => {
 //       const actualValue = settings[key];
@@ -376,10 +376,10 @@
 //
 //     // 🔐 Step 4: Generate hash map only for entries that have hashes
 //     const validForHashing = entriesWithSettings.filter(r => r.hashes);
-//     const newHashMap = computeDualHashMap(validForHashing);
+//     const newHashMap = generateGroupSettingsHashMap(validForHashing);
 //
 //     logHashDifferences(newHashMap);
-//     saveDualHashMap(newHashMap);
+//     storeGroupSettingsHashMap(newHashMap);
 //     debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 //
 //     if (validForHashing.length > 0) {
@@ -433,8 +433,8 @@
 //   ];
 //
 //   // Compute and store initial hashes
-//   const originalHashMap = computeDualHashMap(sampleGroups);
-//   saveDualHashMap(originalHashMap);
+//   const originalHashMap = generateGroupSettingsHashMap(sampleGroups);
+//   storeGroupSettingsHashMap(originalHashMap);
 //
 //   debugLog("✅ Step 1: Saved original hashes.");
 //   Logger.log(originalHashMap);
@@ -443,7 +443,7 @@
 //   const modifiedGroups = JSON.parse(JSON.stringify(sampleGroups));
 //   modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
 //
-//   const newHashMap = computeDualHashMap(modifiedGroups);
+//   const newHashMap = generateGroupSettingsHashMap(modifiedGroups);
 //   logHashDifferences(newHashMap);
 //   const changedEmails = getGroupsWithHashChanges(newHashMap);
 //

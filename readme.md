@@ -40,3 +40,11 @@ Create a clean, maintainable version of the group fetching, comparison, and sett
 ```text
 Authorization ➔ Group Fetching ➔ Sheet Writing ➔ Group Settings Fetching ➔ 
 Hash Comparison ➔ Discrepancy Detection ➔ Reporting to Sheets ➔ Settings Updating
+
+01_constants.gs
+02_config.gs
+03_utils.gs
+04_auth.gs
+05_api.gs
+06_handlers.gs
+07_main.gs

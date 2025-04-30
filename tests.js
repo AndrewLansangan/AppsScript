@@ -59,8 +59,8 @@ function testHashSystem() {
   ];
 
   // Compute and store initial hashes
-  const originalHashMap = computeDualHashMap(sampleGroups);
-  saveDualHashMap(originalHashMap);
+  const originalHashMap = generateGroupSettingsHashMap(sampleGroups);
+  storeGroupSettingsHashMap(originalHashMap);
 
   debugLog("✅ Step 1: Saved original hashes.");
   Logger.log(originalHashMap);
@@ -69,7 +69,7 @@ function testHashSystem() {
   const modifiedGroups = JSON.parse(JSON.stringify(sampleGroups));
   modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
 
-  const newHashMap = computeDualHashMap(modifiedGroups);
+  const newHashMap = generateGroupSettingsHashMap(modifiedGroups);
   logHashDifferences(newHashMap);
   const changedEmails = getGroupsWithHashChanges(newHashMap);
 

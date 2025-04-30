@@ -85,7 +85,7 @@ function listLogs(message, data = null, enableLogs = true) {
 }
 
 function logHashDifferences(newHashMap) {
-  const oldHashMap = getStoredDualHashMap();
+  const oldHashMap = loadGroupSettingsHashMap();
 
   Object.entries(newHashMap).forEach(([email, newHashes]) => {
     const oldHashes = oldHashMap[email];
