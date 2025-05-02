@@ -84,3 +84,10 @@ function testHashSystem() {
     errorLog("❌ Test failed: Hash change detection is not working as expected.");
   }
 }
+
+function testRegenerateSheets() {
+  regenerateSheets();
+}
+function testLoggingSystem() {
+  logEvent('DEBUG', 'Test', 'Logger', 'Test Run', 'hash123', 'This is a test log');
+}

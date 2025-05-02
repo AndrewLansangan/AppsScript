@@ -24,40 +24,37 @@ function regenerateSheetsWithConfirmation() {
 
 function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
+        logMemoryUsage("Start listGroups");
+
         try {
             const domain = getWorkspaceDomain();
             const groupData = fetchAllGroupData(domain, bypassETag);
 
             if (!Array.isArray(groupData) || groupData.length === 0) {
-                debugLog("❌ No valid group data retrieved.");
+                errorLog("❌ No valid group data retrieved.");
+                logEvent('ERROR', 'GroupList', domain, 'Fetch Failed', '', 'Empty or invalid group data');
                 return [];
             }
 
-            if (!hasDataChanged("GROUP_EMAILS", groupData)) {
+            const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS.GROUP_EMAILS);
+            const sheetEmpty = sheet.getLastRow() <= 1;
+            const hash = hashGroupList(groupData);
+
+            if (!hasDataChanged("GROUP_EMAILS", groupData) && !sheetEmpty) {
                 debugLog("✅ No changes in group data. Skipping save.");
+                logEvent('INFO', 'GroupList', domain, 'Skipped (No Changes)', hash, 'Hash matched, skipping sheet write');
                 return groupData;
             }
 
-            // Save updated state
-            saveGroupEmails(groupData);
-            const hash = hashGroupList(groupData);
-            PropertiesService.getScriptProperties().setProperty(
-                "GROUP_EMAILS_HASH",
-                hash);
-
-// ✅ Log the event (optional, for tracking/auditing)
-            logEventToSheet('GroupList', 'all groups', 'Fetched & Updated', hash, `Fetched ${groupData.length} groups`);
-            writeGroupListToSheet(groupData);
-
-            const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            // Write sheet data
             const now = new Date().toISOString();
             const oldETagMap = getStoredData("GROUP_ETAGS") || {};
             const modifiedMap = {};
 
             if (sheet.getLastRow() > 1) {
-                const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).getValues();
+                const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.GROUP_EMAILS.length).getValues();
                 const emailIndex = 0;
-                const lastModifiedIndex = HEADERS[SHEET_NAMES.GROUP_EMAILS].indexOf("Last Modified");
+                const lastModifiedIndex = HEADERS.GROUP_EMAILS.indexOf("Last Modified");
 
                 existing.forEach(row => {
                     const email = row[emailIndex];
@@ -86,19 +83,30 @@ function listGroups(bypassETag = true) {
                 ];
             });
 
+            // Clear and write sheet rows
             if (sheet.getLastRow() > 1) {
-                sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).clearContent();
+                sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.GROUP_EMAILS.length).clearContent();
             }
 
-            sheet.getRange(2, 1, rows.length, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).setValues(rows);
-            formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            sheet.getRange(2, 1, rows.length, HEADERS.GROUP_EMAILS.length).setValues(rows);
+            formatSheet(sheet, HEADERS.GROUP_EMAILS);
 
+            // Save updated state
+            saveGroupEmails(groupData);
+            PropertiesService.getScriptProperties().setProperty("GROUP_EMAILS_HASH", hash);
             PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
 
-            debugLog(`✅ Processed and saved ${rows.length} groups.`);
+            // Events + Debug Logs
+            logEvent('INFO', 'GroupList', domain, 'Fetched & Updated', hash, `Saved ${rows.length} groups`);
+            writeDomainGroupHashEvent(domain, groupData); // Optional: includes this hash into Events
+
+            debugLog(`✅ Processed and saved ${rows.length} groups`);
+            logMemoryUsage("End listGroups");
+
             return groupData;
         } catch (err) {
             errorLog("❌ Error in listGroups", err.toString());
+            logEvent('ERROR', 'GroupList', 'listGroups()', 'Exception', '', err.toString());
             return [];
         }
     });
@@ -107,44 +115,58 @@ function listGroups(bypassETag = true) {
 //TODO
 function listGroupSettings() {
     return benchmark("listGroupSettings", () => {
-        //FIXME groupEmails aren't retrieving emails. It has to get the data from the ScriptProperties or reading it from the sheet group_emails.
-        const groupEmails = resolveGroupEmails(); // ✅ handles sheet → script → fallback
+        const groupEmails = resolveGroupEmails();
+        logEvent('DEBUG', 'GroupSettings', 'Resolver', 'Resolved Emails', '', `${groupEmails.length} group emails`);
 
-        const {changed, all, errored} = fetchAllGroupSettings(groupEmails);
+        const { changed, all, errored } = fetchAllGroupSettings(groupEmails);
+        debugLog(`Raw fetch count: ${all?.length}`);
+        debugLog(`Errored groups count: ${errored?.length}`);
+        debugLog(JSON.stringify(all?.slice(0, 2), null, 2)); // Preview first 2
+
         if (!Array.isArray(all) || all.length === 0) {
-            debugLog("❌ No group settings fetched.");
+            errorLog("❌ No group settings fetched.");
+            logEvent('ERROR', 'GroupSettings', 'All Groups', 'Fetch Failed', '', 'Fetched array was empty or invalid');
             return [];
         }
 
-        // 🔎 Step 3: Process all entries with settings
+        logEvent('INFO', 'GroupSettings', 'All Groups', 'Fetched', '', `Fetched settings for ${all.length} groups`);
+
+        // 🔎 Filter for groups with settings
         const entriesWithSettings = all.filter(r => r.settings);
         debugLog(`✅ Groups with settings: ${entriesWithSettings.length}`);
+        logEvent('DEBUG', 'GroupSettings', 'All Groups', 'Filtered for settings', '', `${entriesWithSettings.length} with valid settings`);
 
-        // 🔐 Step 4: Generate hash map only for entries that have hashes
+        // 🔐 Hash computation
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
         const newHashMap = computeDualHashMap(validForHashing);
 
         logHashDifferences(newHashMap);
         storeGroupSettingsHashMap(newHashMap);
-        debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
+        logEvent('INFO', 'GroupSettings', 'All Groups', 'Hashes Stored', '', `${Object.keys(newHashMap).length} groups hashed`);
 
         if (validForHashing.length > 0) {
             try {
                 saveToSheet(newHashMap);
+                logEvent('INFO', 'GroupSettings', 'Hashes', 'Saved to Sheet', '', `Saved ${validForHashing.length} rows`);
             } catch (e) {
                 debugLog("❌ Saving hash map in chunks due to size limits.");
+                logEvent('WARN', 'GroupSettings', 'Hashes', 'Save Failed — Retrying in Chunks', '', e.toString());
                 saveToSheetInChunks(newHashMap);
             }
         } else {
             debugLog("ℹ️ Hash map unchanged. Skipping sheet save.");
+            logEvent('INFO', 'GroupSettings', 'Hashes', 'Skipped', '', 'No new hashes to write');
         }
 
-        // ⚠️ Step 5: Check for policy violations even if unchanged
+        // ⚠️ Check for policy violations
         const violations = filterGroupSettings(entriesWithSettings);
         if (violations.length === 0) {
             debugLog("✅ No group settings violations found. Skipping write.");
+            logEvent('INFO', 'GroupSettings', 'Policy', 'No Violations', '', 'All groups passed settings compliance check');
             return all;
         }
+
+        logEvent('INFO', 'GroupSettings', 'Policy', 'Violations Found', '', `${violations.length} settings mismatches`);
 
         const detailRows = generateDiscrepancyRows(violations);
         const violationKeyMap = generateViolationKeyMap(violations);
@@ -153,8 +175,12 @@ function listGroupSettings() {
         writeDiscrepancyLog(violations);
         writeSummaryReport(rowMap, violationKeyMap);
 
-        debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${violations.length} key-level violations.`);
-        if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
+        logEvent('INFO', 'GroupSettings', 'Policy', 'Reports Written', '', 'Discrepancy, summary, and detail reports updated');
+
+        if (errored.length > 0) {
+            errorLog(`❌ ${errored.length} groups could not be processed.`);
+            logEvent('ERROR', 'GroupSettings', 'Fetch', 'Partial Failure', '', `${errored.length} failed groups`);
+        }
 
         return all;
     });

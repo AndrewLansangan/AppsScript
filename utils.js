@@ -164,6 +164,19 @@ function storeGroupSettingsHashMap(hashMap) {
     PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
 }
 
+function computeDualHashMap(groupSettingsList) {
+    const hashMap = {};
+
+    groupSettingsList.forEach(({ email, hashes }) => {
+        hashMap[email] = {
+            businessHash: hashes.businessHash,
+            fullHash: hashes.fullHash
+        };
+    });
+
+    return hashMap;
+}
+
 // ===========================
 // 🧩 Optional Cleanup
 // ===========================

@@ -19,7 +19,8 @@
     "utils.js",
     "sheet.js",
     "core-group.js",
-    "core-app.js"
+    "core-app.js",
+    "tests.js"
   ],
   "skipSubdirectories": true
 }

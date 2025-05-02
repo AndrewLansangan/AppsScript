@@ -97,6 +97,7 @@ function fetchAllGroupData(domain, bypassETag = false) {
 
         const currentGroups = (data.groups || []).map(normalizeDirectoryGroup);
         groups.push(...currentGroups);
+        debugLog("📦 Fetched groups count:", groups.length);
         pageToken = data.nextPageToken;
     } while (pageToken);
     return groups;

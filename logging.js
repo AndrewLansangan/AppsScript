@@ -1,73 +1,64 @@
-// debug.gs - Logging and Utility Functions
+// ===========================
+// 🪵 logging.gs — Central Logging Module
+// ===========================
+
 const GLOBAL_LOGGING_ENABLED = true;
 
-// Flags to control logging for each level
 const LOGGING_ENABLED = {
-  DEBUG: true,   // Set to true to enable DEBUG logs
-  INFO: true,    // Set to true to enable INFO logs
-  VERBOSE: false, // Set to true to enable VERBOSE logs
-  ERROR: true,    // Set to true to enable ERROR logs
+  DEBUG: true,
+  INFO: true,
+  VERBOSE: false,
+  ERROR: true,
   ALWAYS: true
 };
 
-// Flags to prevent multiple logging of specific messages
-let groupListLogged = false;
-let tokenLogged = false;
-let oauthLogged = false;
-let enableLogs = true;  // Global flag to enable/disable logging. Change this to false to disable logs globally.
-const loggedOnce = new Set();
+const LOG_LEVEL = 'DEBUG';
 
-/**
- * Logs a debug-level message.
- * @param {string} message The log message to be recorded.
- * @param {Object|null} [data=null] Additional data to log with the message.
- */
+function shouldLogLevel(level) {
+  const levels = ['DEBUG', 'INFO', 'ERROR', 'ALWAYS'];
+  const current = levels.indexOf(LOG_LEVEL);
+  const incoming = levels.indexOf(level);
+  return incoming >= current || level === 'ALWAYS';
+}
+
+function logEvent(level, type, target, action, hash = '', notes = '') {
+  const now = new Date().toISOString();
+  const row = [now, type, target, action, hash, notes];
+  Logger.log(`[${level}] ${now} — ${type} | ${action} | ${target} | ${notes}`);
+
+  if (shouldLogLevel(level)) {
+    const sheet = getOrCreateSheet('Events', ['Date', 'Type', 'Target', 'Action', 'Hash', 'Notes']);
+    sheet.appendRow(row);
+  }
+}
+
+// ========== Level Helpers ==========
+
 function debugLog(message, data = null) {
-  logWithLevel("DEBUG", message, data);
+  logWithLevel('DEBUG', message, data);
 }
 
-/**
- * Logs an info-level message.
- * @param {string} message The log message to be recorded.
- * @param {Object|null} [data=null] Additional data to log with the message.
- */
 function infoLog(message, data = null) {
-  logWithLevel("INFO", message, data);
+  logWithLevel('INFO', message, data);
 }
 
-/**
- * Logs a verbose-level message.
- * @param {string} message The log message to be recorded.
- * @param {Object|null} [data=null] Additional data to log with the message.
- */
 function verboseLog(message, data = null) {
-  logWithLevel("VERBOSE", message, data);
+  logWithLevel('VERBOSE', message, data);
 }
 
-/**
- * Logs an error-level message.
- * @param {string} message The log message to be recorded.
- * @param {Object|null} [data=null] Additional data to log with the message.
- */
 function errorLog(message, data = null) {
-  logWithLevel("ERROR", message, data);
+  logWithLevel('ERROR', message, data);
 }
 
-function handleError(e, functionName) {
-  const errorMessage = `${functionName} failed: ${e.message}`;
-  errorLog(errorMessage);
-  Logger.log(errorMessage);
-  return { error: errorMessage };
-}
+// ========== Internal Logging Logic ==========
 
-function logWithLevel(level, message, data) {
+function logWithLevel(level, message, data = null) {
   if (!GLOBAL_LOGGING_ENABLED || !LOGGING_ENABLED[level]) return;
 
   const timestamp = new Date().toISOString();
-
   const messageStr = (typeof message === 'object')
-    ? JSON.stringify(message, null, 2)
-    : String(message);
+      ? JSON.stringify(message, null, 2)
+      : String(message);
 
   const skipPatterns = ["GROUP_LIST", "ACCESS_TOKEN", "oauth2.GoogleOAuth2", "ACCESS_TOKEN_RETRIEVED"];
   const matchedPattern = skipPatterns.find(p => messageStr.includes(p));
@@ -78,10 +69,16 @@ function logWithLevel(level, message, data) {
   Logger.log(data ? `${logMessage}: ${JSON.stringify(data, null, 2)}` : logMessage);
 }
 
-function listLogs(message, data = null, enableLogs = true) {
-  if (enableLogs) {
-    debugLog(`📋 ListGroupSettings Log: ${message}`, data);
-  }
+// ========== Helpers ==========
+
+function handleError(e, functionName) {
+  const errorMessage = `${functionName} failed: ${e.message}`;
+  errorLog(errorMessage);
+  return { error: errorMessage };
+}
+
+function listLogs(message, data = null, enable = true) {
+  if (enable) debugLog(`📋 List Log: ${message}`, data);
 }
 
 function logHashDifferences(newHashMap) {
@@ -92,25 +89,46 @@ function logHashDifferences(newHashMap) {
 
     if (!oldHashes) {
       debugLog(`🔔 ${email} added to hash tracking.`);
-      debugLog(`🆕 ${email}: No previous hashes found. Assuming changed.`);
-      debugLog(`  ├─ businessHash → ${newHashes.businessHash}`);
-      debugLog(`  └─ fullHash     → ${newHashes.fullHash}`);
       return;
     }
 
     const businessChanged = oldHashes.businessHash !== newHashes.businessHash;
     const fullChanged = oldHashes.fullHash !== newHashes.fullHash;
 
-    const oldBusiness = oldHashes.businessHash || 'Not Found';
-    const oldFull = oldHashes.fullHash || 'Not Found';
-
     debugLog(`🔍 ${email}:`);
-    debugLog(`  businessHash equal: ${!businessChanged}`);
-    debugLog(`    old → ${oldBusiness}`);
+    debugLog(`  businessHash changed: ${businessChanged}`);
+    debugLog(`    old → ${oldHashes.businessHash || 'N/A'}`);
     debugLog(`    new → ${newHashes.businessHash}`);
 
-    debugLog(`  fullHash equal: ${!fullChanged}`);
-    debugLog(`    old → ${oldFull}`);
+    debugLog(`  fullHash changed: ${fullChanged}`);
+    debugLog(`    old → ${oldHashes.fullHash || 'N/A'}`);
     debugLog(`    new → ${newHashes.fullHash}`);
   });
 }
+
+// ========== Benchmarking & Memory ==========
+
+function benchmark(label, fn) {
+  const start = Date.now();
+  const result = fn();
+  const duration = Date.now() - start;
+  debugLog(`⏱️ ${label} completed in ${duration}ms`);
+  return result;
+}
+
+function logMemoryUsage(label = '') {
+  try {
+    if (typeof Utilities.getMemoryUsage === 'function') {
+      const usage = Utilities.getMemoryUsage();
+      debugLog(`🧠 Memory${label ? ' (' + label + ')' : ''}: ${usage} bytes`);
+    } else {
+      debugLog(`🧠 Memory logging not supported in this environment.`);
+    }
+  } catch (e) {
+    errorLog(`Memory usage logging failed: ${e.message}`);
+  }
+}
+
+// ========== Deduping ==========
+
+const loggedOnce = new Set();
