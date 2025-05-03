@@ -226,7 +226,13 @@ function resolveGroupEmails() {
             return [];
         }
 
-        const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) {
+            debugLog("📄 Group Emails sheet has no data.");
+            return [];
+        }
+
+        const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
         const emails = values.flat().filter(email => typeof email === 'string' && email.includes('@'));
 
         debugLog(`📄 Loaded ${emails.length} group emails from sheet`);
@@ -395,4 +401,17 @@ function doHeadersMatch(sheet, expectedHeaders) {
         debugLog(`⚠️ Header mismatch in ${sheet.getName()}\nExpected: ${expectedHeaders.join(', ')}\nActual: ${actual.join(', ')}`);
     }
     return match;
+}
+
+/**
+ * 🧰 Manually initializes all required sheets for group settings.
+ * Includes: GROUP_EMAILS, Detail Report, Discrepancies, Summary Report
+ */
+function initializeGroupSettingsSheets() {
+    debugLog("🛠 Manually initializing group settings sheets...");
+
+    getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+    setupReportSheets(); // This handles Detail Report, Discrepancies, etc.
+
+    debugLog("✅ Group settings sheets initialized.");
 }

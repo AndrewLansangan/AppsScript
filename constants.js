@@ -2,6 +2,13 @@
 // 📊 Sheet & Header Definitions
 // ===========================
 
+const EXECUTION_MODE = {
+  bypassETag: false,
+  bypassHash: false,
+  manual: false,
+  dryRun: false // ← optional
+};
+
 const SHEET_NAMES = {
   DETAIL_REPORT: 'Detail Report',
   SUMMARY_REPORT: 'Summary Report',

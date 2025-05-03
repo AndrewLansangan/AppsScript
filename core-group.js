@@ -39,7 +39,7 @@ function fetchSingleGroupData(email) {
  *
  * ## Parameters:
  * @param {string} domain - The Workspace domain for which to fetch groups (e.g., "grey-box.ca").
- * @param {boolean} [bypassETag=false] - If true, skips ETag checking and always fetches fresh data.
+ * @param options
  *
  * ## Returns:
  * @returns {NormalizedDirectoryGroup[]} Array of normalized group objects with the following structure:
@@ -55,13 +55,17 @@ function fetchSingleGroupData(email) {
  * - If an API error occurs (non-200 response), logs the error and returns an empty array `[]`.
  */
 
-function fetchAllGroupData(domain, bypassETag = false) {
-    //empty array to
+function fetchAllGroupData(domain, options = EXECUTION_MODE) {
+    const { bypassETag = false, manual = false } = options;
+    if (manual) {
+        debugLog(`⚙️ Manual mode enabled — skipping fetch for domain ${domain}`);
+        return [];
+    }
+
     const groups = [];
     let pageToken = null;
     const oldDomainETag = !bypassETag ? getDomainETag(domain) : null;
-
-    const headers = buildAuthHeaders({etag: oldDomainETag});
+    const headers = buildAuthHeaders({ etag: oldDomainETag });
 
     do {
         let url = `${ADMIN_DIRECTORY_API_BASE_URL}?domain=${encodeURIComponent(domain)}`;
@@ -75,7 +79,7 @@ function fetchAllGroupData(domain, bypassETag = false) {
         const status = res.getResponseCode();
         if (status === 304) {
             debugLog(`🔁 No changes for ${domain} — ETag matched.`);
-            return []; // or return cached version if desired
+            return [];
         }
 
         if (status !== 200) {
@@ -84,10 +88,8 @@ function fetchAllGroupData(domain, bypassETag = false) {
         }
 
         const data = JSON.parse(res.getContentText());
-        const newDomainETag = data.etag || null
+        const newDomainETag = data.etag || null;
 
-        //FIXME REMOVE ETAGS FROM GROUPS
-        // ✅ Save domain-level ETag to detect future changes in group list
         if (!bypassETag && newDomainETag) {
             if (oldDomainETag && oldDomainETag !== newDomainETag) {
                 recordDomainETagChange(domain, oldDomainETag, newDomainETag);
@@ -100,10 +102,19 @@ function fetchAllGroupData(domain, bypassETag = false) {
         debugLog("📦 Fetched groups count:", groups.length);
         pageToken = data.nextPageToken;
     } while (pageToken);
+
+    debugLog(`📊 group preview: ${JSON.stringify(groups.slice(0, 2), null, 2)}`);
     return groups;
 }
 
-function fetchGroupSettings(email) {
+function fetchGroupSettings(email, options = EXECUTION_MODE) {
+    const {manual} = options
+
+    if (manual) {
+        debugLog(`⚙️ Manual mode enabled — skipping fetch for ${email}`);
+        return { email, manual: true };
+    }
+
     const encodedEmail = encodeURIComponent(email);
     const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodedEmail}?alt=json`;
     const headers = buildAuthHeaders();
@@ -201,7 +212,7 @@ function fetchGroupSettings(email) {
  * Fetches group settings for multiple groups and returns categorized results.
  *
  * @param {string[]} emails - Array of group email addresses.
- * @param {boolean} [useGlobalHashCheck=false] - Whether to compare using fullHash instead of businessHash.
+ * @param options
  * @returns {{
  *   all: Object[],
  *   changed: Object[],
@@ -209,9 +220,14 @@ function fetchGroupSettings(email) {
  *   errored: Object[]
  * }}
  */
-function fetchAllGroupSettings(emails, useGlobalHashCheck = false) {
+function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
+    const {
+        bypassETag = false,
+        bypassHas =    false,
+        manual = false,
+        dryRun = false } = options;
     if (!Array.isArray(emails) || emails.length === 0) {
-        return {all: [], changed: [], unchanged: [], errored: []};
+        return { all: [], changed: [], unchanged: [], errored: [] };
     }
 
     const all = [];
@@ -221,33 +237,25 @@ function fetchAllGroupSettings(emails, useGlobalHashCheck = false) {
 
     emails.forEach(email => {
         try {
-            const result = fetchGroupSettings(email, useGlobalHashCheck);
+            const result = fetchGroupSettings(email, options);
             all.push(result);
 
             if (result.error) {
                 errored.push(result);
-            } else if (result.unchanged) {
+            } else if (result.unchanged || result.manual) {
                 unchanged.push(result);
             } else {
                 changed.push(result);
             }
-
         } catch (err) {
-            const fallback = {email, error: true};
+            const fallback = { email, error: true };
             all.push(fallback);
             errored.push(fallback);
             errorLog(`❌ Error fetching settings for ${email}`, err.toString());
         }
     });
 
-    // TODO: Auto-log summary (total/changed/unchanged/errors) from inside this function
-
-    // TODO: Optionally return a `summary` field like:
-    // summary: { total: all.length, changed: changed.length, unchanged: unchanged.length, errored: errored.length }
-
-    // TODO: Add end time and duration tracking if benchmarking
-
-    return {all, changed, unchanged, errored};
+    return { all, changed, unchanged, errored };
 }
 
 // ===========================
@@ -305,7 +313,8 @@ function filterGroupSettings(groupSettingsData) {
                     key,
                     expected: expectedValue,
                     actual: actualValue ?? 'Not Found',
-                    hash: businessHash
+                    hash: businessHash,
+                    lastModified: now
                 });
             }
         });

@@ -91,3 +91,11 @@ function testRegenerateSheets() {
 function testLoggingSystem() {
   logEvent('DEBUG', 'Test', 'Logger', 'Test Run', 'hash123', 'This is a test log');
 }
+
+function runManualGroupSync() {
+  const domain = getWorkspaceDomain();
+  const groupData = fetchAllGroupData(domain, { bypassETag: true, manual: false });
+  const emails = groupData.map(g => g.email);
+  const results = fetchAllGroupSettings(emails, { manual: false });
+  logEventToSheet('ManualRun', 'group settings', 'Completed', '', `Processed ${emails.length} groups`);
+}

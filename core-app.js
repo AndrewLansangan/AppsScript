@@ -22,10 +22,16 @@ function regenerateSheetsWithConfirmation() {
 }
 
 //FIXME GroupEmails not printing etags on Google Sheets
-function listGroups(bypassETag = true) {
+function listGroups(options = EXECUTION_MODE) {
+    const {
+        bypassETag = false,
+        bypassHash = false,
+        manual = false,
+        dryRun = false } = options;
+
     return benchmark("listGroups", () => {
         try {
-            const groupData = fetchAllGroupData(getWorkspaceDomain(), bypassETag);
+            const groupData = fetchAllGroupData(getWorkspaceDomain(), options);
 
             if (!Array.isArray(groupData) || groupData.length === 0) {
                 debugLog("No valid group data retrieved.");
@@ -35,12 +41,12 @@ function listGroups(bypassETag = true) {
             const groupEmails = groupData.map(group => group.email);
             debugLog(`Fetched ${groupData.length} groups.`);
 
-            if (!hasDataChanged("GROUP_EMAILS", groupData)) {
+            if (!bypassHash && !hasDataChanged("GROUP_EMAILS", groupData) && !isSheetEmpty) {
                 debugLog("✅ No changes in group data. Skipping processing.");
                 return groupData;
             }
 
-            const newHash = hashGroupList(groupData); // hashGroupList comes from utils.js
+            const newHash = hashGroupList(groupData);
             logEventToSheet('GroupList', 'all groups', 'Fetched & Updated', newHash, `Fetched ${groupData.length} groups`);
 
             const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
@@ -111,20 +117,19 @@ function listGroups(bypassETag = true) {
 // writeSummaryReport(rowMap, violationKeyMap)
 */
 
-function listGroupSettings() {
+function listGroupSettings(options = EXECUTION_MODE) {
+    const {bypassETag = true, bypassHash = true, manual = true, dryRun = true} = options
     return benchmark("listGroupSettings", () => {
         const groupEmails = resolveGroupEmails();
 
-        // 🚨 Nothing to process — setup structure, then exit
-        const isEmpty = !Array.isArray(groupEmails) || groupEmails.length === 0;
-        if (isEmpty) {
+        if (!Array.isArray(groupEmails) || groupEmails.length === 0) {
             errorLog("❌ No group emails resolved — skipping group settings check.");
-            setupReportSheets(); // Ensure report sheets still get created
+            setupReportSheets();
             getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
             return [];
         }
 
-        const { changed, all, errored } = fetchAllGroupSettings(groupEmails);
+        const { changed, all, errored } = fetchAllGroupSettings(groupEmails, options);
         if (!Array.isArray(all) || all.length === 0) {
             errorLog("❌ No group settings fetched.");
             return [];
@@ -140,7 +145,7 @@ function listGroupSettings() {
         storeGroupSettingsHashMap(newHashMap);
         debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
-        if (validForHashing.length > 0) {
+        if (validForHashing.length > 0 && !options.dryRun) {
             try {
                 saveToSheet(newHashMap);
             } catch (e) {
@@ -148,7 +153,7 @@ function listGroupSettings() {
                 saveToSheetInChunks(newHashMap);
             }
         } else {
-            debugLog("ℹ️ Hash map unchanged. Skipping sheet save.");
+            debugLog("ℹ️ Hash map unchanged or dryRun enabled. Skipping sheet save.");
         }
 
         const violations = filterGroupSettings(entriesWithSettings);
@@ -157,12 +162,14 @@ function listGroupSettings() {
             return all;
         }
 
-        const detailRows = generateDiscrepancyRows(violations);
-        const violationKeyMap = generateViolationKeyMap(violations);
+        if (!options.dryRun) {
+            const detailRows = generateDiscrepancyRows(violations);
+            const violationKeyMap = generateViolationKeyMap(violations);
 
-        const rowMap = writeDetailReport(detailRows);
-        writeDiscrepancyLog(violations);
-        writeSummaryReport(rowMap, violationKeyMap);
+            const rowMap = writeDetailReport(detailRows);
+            writeDiscrepancyLog(violations);
+            writeSummaryReport(rowMap, violationKeyMap);
+        }
 
         debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${violations.length} key-level violations.`);
         if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
