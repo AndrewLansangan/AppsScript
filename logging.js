@@ -116,19 +116,6 @@ function benchmark(label, fn) {
   return result;
 }
 
-function logMemoryUsage(label = '') {
-  try {
-    if (typeof Utilities.getMemoryUsage === 'function') {
-      const usage = Utilities.getMemoryUsage();
-      debugLog(`🧠 Memory${label ? ' (' + label + ')' : ''}: ${usage} bytes`);
-    } else {
-      debugLog(`🧠 Memory logging not supported in this environment.`);
-    }
-  } catch (e) {
-    errorLog(`Memory usage logging failed: ${e.message}`);
-  }
-}
-
 // ========== Deduping ==========
 
 const loggedOnce = new Set();

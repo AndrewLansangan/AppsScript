@@ -2,6 +2,9 @@
 // 🔧 UTILS MODULE — General Helpers & Hashing Logic
 // ===================================================
 
+// ===========================
+// 📦 Type Definitions
+// ===========================
 /**
  * @typedef {Object} NormalizedDirectoryGroup
  * @property {string} email
@@ -45,9 +48,9 @@ function benchmark(label, fn) {
     }
 }
 
-// ================================================
+// ===========================
 // 📁 Group List Hashing
-// ================================================
+// ===========================
 
 function hashGroupList(dataArray) {
     if (!Array.isArray(dataArray) || dataArray.length === 0) {
@@ -71,9 +74,9 @@ function hasDataChanged(dataType, newData) {
     return getStoredHash(dataType) !== hashGroupList(newData);
 }
 
-// ======================================================
+// ===========================
 // 🛡️ Settings Hashing
-// ======================================================
+// ===========================
 
 function generateGroupSettingsHashPair(settings) {
     const keysToTrack = Object.keys(UPDATED_SETTINGS).sort();
@@ -104,6 +107,19 @@ function generateGroupSettingsHashMap(entries) {
     return hashMap;
 }
 
+function computeDualHashMap(groupSettingsList) {
+    const hashMap = {};
+    groupSettingsList.forEach(({ email, hashes }) => {
+        if (email && hashes) {
+            hashMap[email] = {
+                businessHash: hashes.businessHash,
+                fullHash: hashes.fullHash
+            };
+        }
+    });
+    return hashMap;
+}
+
 function getGroupsWithHashChanges(newMap) {
     const oldMap = loadGroupSettingsHashMap();
     return Object.entries(newMap).reduce((changed, [email, newHashes]) => {
@@ -116,7 +132,7 @@ function getGroupsWithHashChanges(newMap) {
 }
 
 // ===========================
-// 💾 Storage: ScriptProperties
+// 💾 ScriptProperties Storage
 // ===========================
 
 function getStoredHash(dataType) {
@@ -132,21 +148,14 @@ function saveGroupEmails(groupData) {
     if (!Array.isArray(groupData)) {
         throw new Error('Invalid input: expected an array of group objects');
     }
-
     const groupEmails = getEmailArray(groupData);
-
-    PropertiesService.getScriptProperties().setProperty(
-        "GROUP_EMAILS",
-        JSON.stringify(groupEmails)
-    );
-
+    PropertiesService.getScriptProperties().setProperty("GROUP_EMAILS", JSON.stringify(groupEmails));
     debugLog(`💾 Saved ${groupEmails.length} group emails into ScriptProperties.`);
 }
 
 function loadGroupEmails() {
     const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
     if (!raw) return [];
-
     try {
         return JSON.parse(raw);
     } catch (e) {
@@ -155,30 +164,17 @@ function loadGroupEmails() {
     }
 }
 
+function storeGroupSettingsHashMap(hashMap) {
+    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
+}
+
 function loadGroupSettingsHashMap() {
     const raw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
     return raw ? JSON.parse(raw) : {};
 }
 
-function storeGroupSettingsHashMap(hashMap) {
-    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
-}
-
-function computeDualHashMap(groupSettingsList) {
-    const hashMap = {};
-
-    groupSettingsList.forEach(({ email, hashes }) => {
-        hashMap[email] = {
-            businessHash: hashes.businessHash,
-            fullHash: hashes.fullHash
-        };
-    });
-
-    return hashMap;
-}
-
 // ===========================
-// 🧩 Optional Cleanup
+// 🧹 Cleanup Helpers
 // ===========================
 
 function cleanupLegacyHash(dataType) {
@@ -190,7 +186,7 @@ function cleanupLegacyHash(dataType) {
 }
 
 // ===========================
-// ⚙️ API Utilities
+// 🌐 API Utilities
 // ===========================
 
 function buildAuthHeaders({ json = false, etag = null } = {}) {
@@ -201,12 +197,7 @@ function buildAuthHeaders({ json = false, etag = null } = {}) {
 }
 
 function fetchWithDefaults(url, options = {}) {
-    const finalOptions = {
-        muteHttpExceptions: true,
-        ...options
-    };
-
-    return UrlFetchApp.fetch(url, finalOptions);
+    return UrlFetchApp.fetch(url, { muteHttpExceptions: true, ...options });
 }
 
 function getEmailArray(groups) {

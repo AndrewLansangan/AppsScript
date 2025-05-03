@@ -98,7 +98,7 @@ function formatSheet(sheet, headers, options = {}) {
         }
     }
 }
-
+//FIXME autoFormats is busted.
 function styleSheetHeaders(sheet, headers) {
     if (!Array.isArray(headers) || headers.length === 0) return;
     const range = sheet.getRange(1, 1, 1, headers.length);
@@ -196,8 +196,12 @@ function writeGroupListToSheet(groupData) {
     }
 }
 
+/**
+ * Attempts to resolve group emails from cache or sheet.
+ * Returns [] if neither source is available.
+ */
 function resolveGroupEmails() {
-    // 1. Try from ScriptProperties
+    // ✅ Step 1: Try ScriptProperties cache
     const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
     if (raw) {
         try {
@@ -211,12 +215,20 @@ function resolveGroupEmails() {
         }
     }
 
-    // 2. Fallback: Read from sheet
+    // 🛟 Step 2: Fallback — read from group email sheet (only if it exists)
     try {
-        const sheet = SpreadsheetApp.openById(getSheetId()).getSheetByName(SHEET_NAMES.GROUP_EMAILS);
-        if (!sheet) throw new Error("Group Emails sheet not found");
+        const ss = SpreadsheetApp.openById(getSheetId());
+        const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_EMAILS);
+
+        // ⚠️ If sheet does not exist, return empty — do NOT throw
+        if (!sheet) {
+            debugLog("⚠️ Group Emails sheet not found. Returning empty list.");
+            return [];
+        }
+
         const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
         const emails = values.flat().filter(email => typeof email === 'string' && email.includes('@'));
+
         debugLog(`📄 Loaded ${emails.length} group emails from sheet`);
         return emails;
     } catch (e) {
@@ -283,4 +295,104 @@ function setupReportSheets() {
     });
 
     debugLog("✅ Report sheets initialized successfully.");
+}
+function writeDetailReport(detailRows) {
+    const headers = HEADERS.DETAIL_REPORT;
+    const sheet = getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, headers);
+
+    if (!Array.isArray(detailRows) || detailRows.length === 0) {
+        debugLog("⚠️ No detail rows to write.");
+        return {};
+    }
+
+    if (!doHeadersMatch(sheet, headers)) {
+        errorLog("❌ Header mismatch in Detail Report sheet.");
+        return {};
+    }
+
+    // Clear existing content
+    if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    }
+
+    // Write new rows
+    sheet.getRange(2, 1, detailRows.length, headers.length).setValues(detailRows);
+    debugLog(`✅ Wrote ${detailRows.length} rows to Detail Report`);
+
+    // Return map for summary
+    const rowMap = {};
+    detailRows.forEach(row => {
+        const email = row[0];
+        rowMap[email] = (rowMap[email] || 0) + 1;
+    });
+
+    return rowMap;
+}
+function writeDiscrepancyLog(violations) {
+    const headers = HEADERS.DISCREPANCIES;
+    const sheet = getOrCreateSheet(SHEET_NAMES.DISCREPANCIES, headers);
+
+    if (!Array.isArray(violations) || violations.length === 0) {
+        debugLog("⚠️ No discrepancies to write.");
+        return;
+    }
+
+    if (!doHeadersMatch(sheet, headers)) {
+        errorLog("❌ Header mismatch in Discrepancies sheet.");
+        return;
+    }
+
+    // Clear old content
+    if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    }
+
+    const rows = violations.map(v => [
+        v.email,
+        v.key,
+        v.expected,
+        v.actual,
+        new Date().toISOString()
+    ]);
+
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    debugLog(`✅ Wrote ${rows.length} rows to Discrepancies`);
+}
+function writeSummaryReport(rowMap, keyMap) {
+    const headers = HEADERS.SUMMARY_REPORT;
+    const sheet = getOrCreateSheet(SHEET_NAMES.SUMMARY_REPORT, headers);
+
+    if (!rowMap || Object.keys(rowMap).length === 0) {
+        debugLog("⚠️ No summary rows to write.");
+        return;
+    }
+
+    if (!doHeadersMatch(sheet, headers)) {
+        errorLog("❌ Header mismatch in Summary Report sheet.");
+        return;
+    }
+
+    // Clear old content
+    if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    }
+
+    const now = new Date().toISOString();
+    const rows = Object.entries(rowMap).map(([email, count]) => [
+        email,
+        count,
+        (keyMap[email] || []).join(', '),
+        now
+    ]);
+
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    debugLog(`✅ Wrote ${rows.length} rows to Summary Report`);
+}
+function doHeadersMatch(sheet, expectedHeaders) {
+    const actual = sheet.getRange(1, 1, 1, expectedHeaders.length).getValues()[0];
+    const match = JSON.stringify(actual) === JSON.stringify(expectedHeaders);
+    if (!match) {
+        debugLog(`⚠️ Header mismatch in ${sheet.getName()}\nExpected: ${expectedHeaders.join(', ')}\nActual: ${actual.join(', ')}`);
+    }
+    return match;
 }
