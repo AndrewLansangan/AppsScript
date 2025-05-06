@@ -5,6 +5,7 @@
 // ===========================
 // 📦 Type Definitions
 // ===========================
+
 /**
  * @typedef {Object} NormalizedDirectoryGroup
  * @property {string} email
@@ -129,60 +130,6 @@ function getGroupsWithHashChanges(newMap) {
         }
         return changed;
     }, []);
-}
-
-// ===========================
-// 💾 ScriptProperties Storage
-// ===========================
-
-function getStoredHash(dataType) {
-    return PropertiesService.getScriptProperties().getProperty(`${dataType}_HASH`) || null;
-}
-
-function getStoredData(dataType) {
-    const raw = PropertiesService.getScriptProperties().getProperty(`${dataType}`);
-    return raw ? JSON.parse(raw) : null;
-}
-
-function saveGroupEmails(groupData) {
-    if (!Array.isArray(groupData)) {
-        throw new Error('Invalid input: expected an array of group objects');
-    }
-    const groupEmails = getEmailArray(groupData);
-    PropertiesService.getScriptProperties().setProperty("GROUP_EMAILS", JSON.stringify(groupEmails));
-    debugLog(`💾 Saved ${groupEmails.length} group emails into ScriptProperties.`);
-}
-
-function loadGroupEmails() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
-    if (!raw) return [];
-    try {
-        return JSON.parse(raw);
-    } catch (e) {
-        errorLog("❌ Failed to parse GROUP_EMAILS", e.toString());
-        return [];
-    }
-}
-
-function storeGroupSettingsHashMap(hashMap) {
-    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
-}
-
-function loadGroupSettingsHashMap() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
-    return raw ? JSON.parse(raw) : {};
-}
-
-// ===========================
-// 🧹 Cleanup Helpers
-// ===========================
-
-function cleanupLegacyHash(dataType) {
-    const raw = getStoredHash(dataType);
-    if (raw?.startsWith("[Ljava.lang.Object;")) {
-        PropertiesService.getScriptProperties().deleteProperty(`${dataType}_DATA_HASH`);
-        debugLog(`🪚 Removed invalid legacy hash for ${dataType}`);
-    }
 }
 
 // ===========================

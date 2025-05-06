@@ -41,24 +41,25 @@ function listGroups(options = EXECUTION_MODE) {
             const groupEmails = groupData.map(group => group.email);
             debugLog(`Fetched ${groupData.length} groups.`);
 
+            let isSheetEmpty = null;
             if (!bypassHash && !hasDataChanged("GROUP_EMAILS", groupData) && !isSheetEmpty) {
                 debugLog("✅ No changes in group data. Skipping processing.");
                 return groupData;
             }
 
             const newHash = hashGroupList(groupData);
-            logEventToSheet('GroupList', 'all groups', 'Fetched & Updated', newHash, `Fetched ${groupData.length} groups`);
+            logGroupDirectoryEvent('GroupList', 'all groups', 'Fetched & Updated', newHash, `Fetched ${groupData.length} groups`);
 
-            const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST, HEADERS[SHEET_NAMES.GROUP_LIST]);
             const now = new Date().toISOString();
 
-            const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
+            const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_TAGS") || '{}');
             const modifiedMap = {};
 
             if (sheet.getLastRow() > 1) {
-                const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).getValues();
+                const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_LIST].length).getValues();
                 const emailIndex = 0;
-                const lastModifiedIndex = HEADERS[SHEET_NAMES.GROUP_EMAILS].indexOf("Last Modified");
+                const lastModifiedIndex = HEADERS[SHEET_NAMES.GROUP_LIST].indexOf("Last Modified");
 
                 existing.forEach(row => {
                     const email = row[emailIndex];
@@ -88,15 +89,15 @@ function listGroups(options = EXECUTION_MODE) {
             });
 
             if (sheet.getLastRow() > 1) {
-                sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).clearContent();
+                sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_LIST].length).clearContent();
             }
 
-            sheet.getRange(2, 1, rows.length, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).setValues(rows);
-            formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            sheet.getRange(2, 1, rows.length, HEADERS[SHEET_NAMES.GROUP_LIST].length).setValues(rows);
+            formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_LIST]);
 
-            PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
-            storeDataAndHash("GROUP_EMAILS", groupData);
-            saveGroupEtagsToSheet(newETagMap);
+            PropertiesService.getScriptProperties().setProperty("GROUP_TAGS", JSON.stringify(newETagMap));
+            storeDataAndHash("GROUP_LIST", groupData);
+            saveGroupTagsToSheet(newETagMap);
 
             debugLog(`✅ Processed and saved ${rows.length} groups.`);
             return groupData;
@@ -125,7 +126,7 @@ function listGroupSettings(options = EXECUTION_MODE) {
         if (!Array.isArray(groupEmails) || groupEmails.length === 0) {
             errorLog("❌ No group emails resolved — skipping group settings check.");
             setupReportSheets();
-            getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            getOrCreateSheet(SHEET_NAMES.GROUP_LIST, HEADERS[SHEET_NAMES.GROUP_LIST]);
             return [];
         }
 
@@ -139,10 +140,13 @@ function listGroupSettings(options = EXECUTION_MODE) {
         debugLog(`✅ Groups with settings: ${entriesWithSettings.length}`);
 
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
+
+        const previousHashMap = loadGroupSettingsHashMap();               // ✅ load before overwrite
         const newHashMap = generateGroupSettingsHashMap(validForHashing);
 
-        logHashDifferences(newHashMap);
-        storeGroupSettingsHashMap(newHashMap);
+        logHashDifferences(newHashMap, previousHashMap);                  // ✅ compare against *real* previous
+        storeGroupSettingsHashMap(newHashMap);                            // ✅ then store new
+
         debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
         if (validForHashing.length > 0 && !options.dryRun) {

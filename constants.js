@@ -6,43 +6,62 @@ const EXECUTION_MODE = {
   bypassETag: false,
   bypassHash: false,
   manual: false,
-  dryRun: false // ← optional
+  dryRun: false
 };
 
 const SHEET_NAMES = {
-  DETAIL_REPORT: 'Detail Report',
-  SUMMARY_REPORT: 'Summary Report',
-  DISCREPANCIES: 'Discrepancies',
-  GROUP_HASHES: 'Group Hashes',
-  GROUP_EMAILS: 'Group Emails',
-  RAW: 'Raw Data',
-  ARCHIVE: 'Archive'
+  DETAIL_REPORT: 'DETAIL REPORT',
+  SUMMARY_REPORT: 'SUMMARY REPORT',
+  DISCREPANCIES: 'DISCREPANCIES',
+  GROUP_LIST: 'GROUP LIST',               // former "Group Hashes"
+  GROUP_LIST_META: 'GROUP METADATA',      // former "Group Emails"
+  ACTIVITY: 'ACTIVITY LOG',
+  DOMAIN_TAGS_LOG: 'Domain ETags Log',
+  ETAG_CACHE: 'ETAG CACHE'
+};
+
+const GROUP_DIRECTORY_HEADERS = {
+  [SHEET_NAMES.GROUP_LIST_META]: ['Email', 'New Business Hash', 'New Full Hash', 'Old Business Hash', 'Old Full Hash', 'Old ETag', 'New ETag', 'Last Modified'],
+  [SHEET_NAMES.GROUP_LIST]: ['Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'Last Modified']
+};
+
+const GROUP_SETTINGS_HEADERS = {
+  [SHEET_NAMES.DETAIL_REPORT]: ['Email', 'Expected', 'Actual', 'Hash', 'Last Modified'],
+  [SHEET_NAMES.SUMMARY_REPORT]: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
+  [SHEET_NAMES.DISCREPANCIES]: ['Email', 'Key', 'Expected', 'Actual', 'Last Modified']
+};
+
+const SYSTEM_HEADERS = {
+  [SHEET_NAMES.ACTIVITY]: [
+    'Timestamp',
+    'Source',
+    'Entity Type',
+    'Email / ID',
+    'Action',
+    'ETag / Ref',
+    'Details'
+  ]
 };
 
 const HEADERS = {
-  [SHEET_NAMES.DETAIL_REPORT]: ['Email', 'Expected', 'Actual', 'Hash', 'Last Modified'],
-  [SHEET_NAMES.SUMMARY_REPORT]: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
-  [SHEET_NAMES.DISCREPANCIES]: ['Email', 'Key', 'Expected', 'Actual', 'Last Modified'],
-  [SHEET_NAMES.GROUP_HASHES]: ['Email', 'New Business Hash', 'New Full Hash', 'Old Business Hash', 'Old Full Hash', 'Last Modified'],
-  [SHEET_NAMES.GROUP_EMAILS]: ['Email', 'Name', 'Description', 'Direct Members Count', 'Admin Created', 'Old ETag', 'New ETag', 'Last Modified'],
-  [SHEET_NAMES.RAW]: ['Timestamp', 'Email', 'Response', 'Payload']
+  ...GROUP_DIRECTORY_HEADERS,
+  ...GROUP_SETTINGS_HEADERS,
+  ...SYSTEM_HEADERS
 };
 
-const SHEET_CONFIG = Object.fromEntries(
-  Object.entries(HEADERS).map(([name, headers]) => [name, headers])
-);
+const SHEET_CONFIG = { ...HEADERS };
 
 // ===========================
 // 🎨 Sheet Formatting Rules
 // ===========================
 
 const FORMATTING_CONFIG = {
-  [SHEET_NAMES.GROUP_EMAILS]: {
+  [SHEET_NAMES.GROUP_LIST]: {
     hide: ['Last Modified', 'Old ETag'],
     resize: ['Email', 'Name', 'Description'],
     wrap: []
   },
-  [SHEET_NAMES.GROUP_HASHES]: {
+  [SHEET_NAMES.GROUP_LIST_META]: {
     hide: ['New Business Hash', 'New Full Hash', 'Old Business Hash', 'Old Full Hash', 'Last Modified'],
     resize: ['Email'],
     wrap: []
@@ -60,11 +79,6 @@ const FORMATTING_CONFIG = {
   [SHEET_NAMES.SUMMARY_REPORT]: {
     hide: [],
     resize: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
-    wrap: []
-  },
-  [SHEET_NAMES.RAW]: {
-    hide: [],
-    resize: ['Email'],
     wrap: []
   }
 };
@@ -102,9 +116,3 @@ const API_URLS = {
   groupQuery: "https://admin.googleapis.com/admin/directory/v1/groups",
   groupSetting: "https://www.googleapis.com/groups/v1/groups/"
 };
-
-// ===========================
-// 📦 Common HTTP Headers
-// ===========================
-
-const HTTP_HEADERS = ['Authorization', 'If-Match', 'If-None-Match', 'Content-Type'];

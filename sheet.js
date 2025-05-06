@@ -6,7 +6,7 @@
 // 📋 Constants
 // ===========================
 
-const ETAG_HEADERS = ["Email", "ETag"];
+const ETAG_HEADERS = ["Email", "Old ETag", "New ETag", "Timestamp"];
 
 // ===========================
 // 📋 Sheet Creation & Header Safety
@@ -43,15 +43,14 @@ function initializeSheets() {
 }
 
 function regenerateSheets() {
-    logMemoryUsage('Before regenerateSheets');
     logEvent('INFO', 'System', 'Sheets', 'Regeneration Started');
 
     try {
-        initializeSheets();
-        logMemoryUsage('After initializeSheets');
+        initializeSheets()
+
         setupReportSheets();
-        getOrCreateEtagCacheSheet();
-        logMemoryUsage('After getOrCreateEtagCacheSheet');
+        getOrCreateEtagCacheSheet()
+
 
         logEvent('INFO', 'System', 'Sheets', 'Regeneration Completed');
     } catch (e) {
@@ -141,7 +140,7 @@ function hideSheetColumns(sheet, columnNames, headers) {
 // ===========================
 // 📋 ETAG Sheet Handling
 // ===========================
-
+//FIXME add new and old headers for the etags implement the differences this is supposed to be used for per email in listGroups()
 function getOrCreateEtagCacheSheet() {
     const ss = SpreadsheetApp.openById(getSheetId());
     let sheet = ss.getSheetByName('ETAG_CACHE');
@@ -168,8 +167,8 @@ function initializeEtagCacheSheet(sheet) {
 }
 
 function writeGroupListToSheet(groupData) {
-    const headers = HEADERS[SHEET_NAMES.GROUP_EMAILS];
-    const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, headers);
+    const headers = HEADERS[SHEET_NAMES.GROUP_LIST];
+    const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST, headers);
 
     // Format first
     formatSheet(sheet, headers);
@@ -190,9 +189,9 @@ function writeGroupListToSheet(groupData) {
 
     if (rows.length > 0) {
         sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-        debugLog(`✅ Inserted ${rows.length} rows into "${SHEET_NAMES.GROUP_EMAILS}"`);
+        debugLog(`✅ Inserted ${rows.length} rows into "${SHEET_NAMES.GROUP_LIST}"`);
     } else {
-        debugLog(`ℹ️ No rows to write to "${SHEET_NAMES.GROUP_EMAILS}"`);
+        debugLog(`ℹ️ No rows to write to "${SHEET_NAMES.GROUP_LIST}"`);
     }
 }
 
@@ -218,7 +217,7 @@ function resolveGroupEmails() {
     // 🛟 Step 2: Fallback — read from group email sheet (only if it exists)
     try {
         const ss = SpreadsheetApp.openById(getSheetId());
-        const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_EMAILS);
+        const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_LIST);
 
         // ⚠️ If sheet does not exist, return empty — do NOT throw
         if (!sheet) {
@@ -410,8 +409,48 @@ function doHeadersMatch(sheet, expectedHeaders) {
 function initializeGroupSettingsSheets() {
     debugLog("🛠 Manually initializing group settings sheets...");
 
-    getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+    getOrCreateSheet(SHEET_NAMES.GROUP_LIST, HEADERS[SHEET_NAMES.GROUP_LIST]);
     setupReportSheets(); // This handles Detail Report, Discrepancies, etc.
 
     debugLog("✅ Group settings sheets initialized.");
+}
+
+/**
+ * Checks if a sheet with the given name exists in the active spreadsheet.
+ * @param {string} sheetName
+ * @returns {boolean}
+ */
+function doesSheetExist(sheetName) {
+    const ss = SpreadsheetApp.openById(getSheetId());
+    return ss.getSheetByName(sheetName) !== null;
+}
+
+/**
+ * Appends a domain-level ETag change to the DOMAIN_TAGS_LOG sheet.
+ *
+ * @param {string} domain - Workspace domain being tracked (e.g., "grey-box.ca").
+ * @param {string} oldETag - Previously stored domain-level ETag.
+ * @param {string} newETag - Newly fetched domain-level ETag.
+ */
+function recordDomainETagChange(domain, oldETag, newETag) {
+    const headers = ['Domain', 'Old ETag', 'New ETag', 'Timestamp'];
+    const sheet = getOrCreateSheet(SHEET_NAMES.DOMAIN_TAGS_LOG, headers);
+    const now = new Date().toISOString();
+
+    sheet.appendRow([domain, oldETag, newETag, now]);
+    debugLog(`📝 Recorded ETag change for ${domain}: ${oldETag} → ${newETag}`);
+}
+function saveGroupTagsToSheet(oldMap, newMap) {
+    const sheet = getOrCreateEtagCacheSheet();
+    sheet.clearContents();
+    sheet.appendRow(ETAG_HEADERS);
+
+    const now = new Date().toISOString();
+    const rows = Object.entries(newMap).map(([email, newEtag]) => {
+        const oldEtag = oldMap[email] || '';
+        return [email, oldEtag, newEtag, now];
+    });
+
+    sheet.getRange(2, 1, rows.length, ETAG_HEADERS.length).setValues(rows);
+    debugLog(`💾 Saved ${rows.length} group ETags into ETAG_CACHE sheet.`);
 }
