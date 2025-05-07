@@ -51,14 +51,24 @@ function loadGroupEmails() {
 // 🔄 Dual Hash Map Storage
 // ===========================
 
+function storeDirectoryGroupHashMap(hashMap) {
+    PropertiesService.getScriptProperties().setProperty("GROUP_HASH_MAP", JSON.stringify(hashMap));
+}
+
+function loadDirectoryGroupHashMap() {
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_HASH_MAP");
+    return raw ? JSON.parse(raw) : {};
+}
+
 function storeGroupSettingsHashMap(hashMap) {
-    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
+    PropertiesService.getScriptProperties().setProperty("GROUP_SETTINGS_HASH_MAP", JSON.stringify(hashMap));
 }
 
 function loadGroupSettingsHashMap() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_SETTINGS_HASH_MAP");
     return raw ? JSON.parse(raw) : {};
 }
+
 
 // ===========================
 // 🧼 Cleanup Helpers

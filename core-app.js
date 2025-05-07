@@ -20,11 +20,9 @@ function regenerateSheetsWithConfirmation() {
         ui.alert('❌ Sheet regeneration cancelled.');
     }
 }
-
 function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
         try {
-            // 🛠️ Merge EXECUTION_MODE with runtime override
             const executionOptions = { ...EXECUTION_MODE, bypassETag };
             const { normalizedData, metaData } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
 
@@ -35,11 +33,13 @@ function listGroups(bypassETag = true) {
 
             debugLog(`Fetched ${normalizedData.length} groups.`);
 
-            // 📥 Write normalized business data to GROUP_EMAILS sheet
+            // ✅ Write normalized business data to GROUP_EMAILS
             writeGroupListToSheet(normalizedData);
 
-            // 🧾 Write technical metadata to GROUP_LIST_META sheet
-            const metaSheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST_META, HEADERS[SHEET_NAMES.GROUP_LIST_META]);
+            // ✅ Write metaData to GROUP_LIST_META
+            const metaSheetName = SHEET_NAMES.GROUP_LIST_META;
+            const metaHeaders = HEADERS[metaSheetName];
+            const metaSheet = getOrCreateSheet(metaSheetName, metaHeaders);
             const metaRows = metaData.map(meta => [
                 meta.email,
                 meta.businessHash,
@@ -51,17 +51,22 @@ function listGroups(bypassETag = true) {
                 meta.lastModified
             ]);
 
-            if (metaSheet.getLastRow() > 1) {
-                metaSheet.getRange(2, 1, metaSheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_LIST_META].length).clearContent();
+            // Validate before writing and formatting
+            if (metaRows.length && metaHeaders?.length) {
+                if (metaSheet.getLastRow() > 1) {
+                    metaSheet.getRange(2, 1, metaSheet.getLastRow() - 1, metaHeaders.length).clearContent();
+                }
+                metaSheet.getRange(2, 1, metaRows.length, metaHeaders.length).setValues(metaRows);
+                formatSheet(metaSheet, metaHeaders);
+            } else {
+                debugLog("⚠️ Skipping formatting. Sheet or headers invalid.");
             }
-            metaSheet.getRange(2, 1, metaRows.length, HEADERS[SHEET_NAMES.GROUP_LIST_META].length).setValues(metaRows);
-            formatSheet(metaSheet, HEADERS[SHEET_NAMES.GROUP_LIST_META]);
 
-            // 🔍 Detect changes in normalized group data
+            // 🔁 Detect changes and store normalized data hash
             const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
             storeDataAndHash("GROUP_NORMALIZED_DATA", normalizedData);
 
-            // 🧠 Store per-group hashes for future diffing
+            // 🧠 Store per-group hashes for auditing
             const perGroupHashMap = {};
             metaData.forEach(meta => {
                 perGroupHashMap[meta.email] = {
@@ -69,15 +74,13 @@ function listGroups(bypassETag = true) {
                     fullHash: meta.fullHash
                 };
             });
-            storeGroupSettingsHashMap(perGroupHashMap);
-
-            // 📋 Log audit-level differences in hashes
+            storeDirectoryGroupHashMap(perGroupHashMap);
             logHashDifferences(perGroupHashMap);
 
-            // 🕒 Record sync timestamp
+            // 🕒 Record last sync timestamp
             PropertiesService.getScriptProperties().setProperty("LAST_GROUP_SYNC", new Date().toISOString());
 
-            // 🪪 Generate summary hash + log event
+            // 📝 Log activity to sheet
             const summaryHash = hashGroupList(normalizedData);
             logEventToSheet("GroupList", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups`);
 
@@ -93,6 +96,79 @@ function listGroups(bypassETag = true) {
         }
     });
 }
+
+// function listGroups(bypassETag = true) {
+//     return benchmark("listGroups", () => {
+//         try {
+//             // 🛠️ Merge EXECUTION_MODE with runtime override
+//             const executionOptions = { ...EXECUTION_MODE, bypassETag };
+//             const { normalizedData, metaData } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
+//
+//             if (!Array.isArray(normalizedData) || normalizedData.length === 0) {
+//                 debugLog("No valid group data retrieved.");
+//                 return [];
+//             }
+//
+//             debugLog(`Fetched ${normalizedData.length} groups.`);
+//
+//             // 📥 Write normalized business data to GROUP_EMAILS sheet
+//             writeGroupListToSheet(normalizedData);
+//
+//             // 🧾 Write technical metadata to GROUP_LIST_META sheet
+//             const metaSheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST_META, HEADERS[SHEET_NAMES.GROUP_LIST_META]);
+//             const metaRows = metaData.map(meta => [
+//                 meta.email,
+//                 meta.businessHash,
+//                 meta.fullHash,
+//                 meta.oldBusinessHash,
+//                 meta.oldFullHash,
+//                 meta.oldETag,
+//                 meta.newETag,
+//                 meta.lastModified
+//             ]);
+//
+//             if (metaSheet.getLastRow() > 1) {
+//                 metaSheet.getRange(2, 1, metaSheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_LIST_META].length).clearContent();
+//             }
+//             metaSheet.getRange(2, 1, metaRows.length, HEADERS[SHEET_NAMES.GROUP_LIST_META].length).setValues(metaRows);
+//             formatSheet(metaSheet, HEADERS[SHEET_NAMES.GROUP_LIST_META]);
+//
+//             // 🔍 Detect changes in normalized group data
+//             const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
+//             storeDataAndHash("GROUP_NORMALIZED_DATA", normalizedData);
+//
+//             // 🧠 Store per-group hashes for future diffing
+//             const perGroupHashMap = {};
+//             metaData.forEach(meta => {
+//                 perGroupHashMap[meta.email] = {
+//                     businessHash: meta.businessHash,
+//                     fullHash: meta.fullHash
+//                 };
+//             });
+//             storeDirectoryGroupHashMap(perGroupHashMap);
+//
+//             // 📋 Log audit-level differences in hashes
+//             logHashDifferences(perGroupHashMap);
+//
+//             // 🕒 Record sync timestamp
+//             PropertiesService.getScriptProperties().setProperty("LAST_GROUP_SYNC", new Date().toISOString());
+//
+//             // 🪪 Generate summary hash + log event
+//             const summaryHash = hashGroupList(normalizedData);
+//             logEventToSheet("GroupList", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups`);
+//
+//             debugLog(changed
+//                 ? `✅ Group list changed — data written and logged.`
+//                 : `✅ No change in group list — data still written.`);
+//
+//             return normalizedData;
+//
+//         } catch (err) {
+//             errorLog("❌ Error in listGroups", err.toString());
+//             return [];
+//         }
+//     });
+// }
 
 /**
  // FIXME Missing or failing calls to these in listGroupSettings():

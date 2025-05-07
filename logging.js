@@ -135,3 +135,26 @@ function benchmark(label, fn) {
 // ========== Deduping ==========
 
 const loggedOnce = new Set();
+function logEventToSheet(sheetName, category, action, hash, message) {
+  const targetSheetName = sheetName || "Events";
+  const headers = ["Timestamp", "Category", "Action", "Hash", "Details"];
+
+  const sheet = getOrCreateSheet(targetSheetName, headers);
+
+  // Ensure headers are written (if new sheet or first-time run)
+  const firstRow = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  const isMissingHeader = firstRow.some((cell, i) => cell !== headers[i]);
+  if (isMissingHeader) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+
+  const logRow = [
+    new Date().toISOString(),
+    category,
+    action,
+    hash,
+    message
+  ];
+
+  sheet.appendRow(logRow);
+}

@@ -78,8 +78,12 @@ const FORMATTING_CONFIG = {
     hide: [],
     resize: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
     wrap: []
+  },
+  [SHEET_NAMES.ACTIVITY]: {
+    hide: [],
+    resize: ['Timestamp', 'Source', 'Entity Type', 'Email / ID', 'Action'],
+    wrap: ['Details']
   }
-  [SHEET_NAMES.ACTIVITY]
 };
 
 // ===========================
@@ -96,6 +100,7 @@ const UPDATED_SETTINGS = {
   "whoCanContactOwner": "ANYONE_CAN_CONTACT",
   "whoCanViewConversations": "ALL_IN_DOMAIN_CAN_VIEW"
 };
+
 //NOTE Is this still necessary?
 const GROUP_SETTINGS_KEYS = Object.keys(UPDATED_SETTINGS);
 

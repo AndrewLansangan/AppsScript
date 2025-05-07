@@ -43,15 +43,12 @@ function initializeSheets() {
 }
 
 function regenerateSheets() {
-    logMemoryUsage('Before regenerateSheets');
     logEvent('INFO', 'System', 'Sheets', 'Regeneration Started');
 
     try {
         initializeSheets();
-        logMemoryUsage('After initializeSheets');
         setupReportSheets();
         getOrCreateEtagCacheSheet();
-        logMemoryUsage('After getOrCreateEtagCacheSheet');
 
         logEvent('INFO', 'System', 'Sheets', 'Regeneration Completed');
     } catch (e) {
@@ -168,8 +165,8 @@ function initializeEtagCacheSheet(sheet) {
 }
 
 function writeGroupListToSheet(groupData) {
-    const headers = HEADERS[SHEET_NAMES.GROUP_EMAILS];
-    const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, headers);
+    const headers = HEADERS[SHEET_NAMES.GROUP_LIST];
+    const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST, headers);
 
     // Format first
     formatSheet(sheet, headers);
@@ -190,9 +187,9 @@ function writeGroupListToSheet(groupData) {
 
     if (rows.length > 0) {
         sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-        debugLog(`✅ Inserted ${rows.length} rows into "${SHEET_NAMES.GROUP_EMAILS}"`);
+        debugLog(`✅ Inserted ${rows.length} rows into "${SHEET_NAMES.GROUP_LIST}"`);
     } else {
-        debugLog(`ℹ️ No rows to write to "${SHEET_NAMES.GROUP_EMAILS}"`);
+        debugLog(`ℹ️ No rows to write to "${SHEET_NAMES.GROUP_LIST}"`);
     }
 }
 
@@ -218,7 +215,7 @@ function resolveGroupEmails() {
     // 🛟 Step 2: Fallback — read from group email sheet (only if it exists)
     try {
         const ss = SpreadsheetApp.openById(getSheetId());
-        const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_EMAILS);
+        const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_LIST);
 
         // ⚠️ If sheet does not exist, return empty — do NOT throw
         if (!sheet) {
