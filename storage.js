@@ -2,19 +2,6 @@
 // 💾 STORAGE MODULE — ScriptProperties & Cache Access
 // ===========================
 
-/**
- * Loads all ScriptProperties (cached once per execution).
- * @returns {Object} Key-value map of stored properties.
- */
-let cachedScriptProperties = null;
-function getScriptProperties() {
-    if (cachedScriptProperties !== null) return cachedScriptProperties;
-    debugLog("Fetching Script Properties");
-    const properties = PropertiesService.getScriptProperties().getProperties();
-    cachedScriptProperties = properties;
-    return properties;
-}
-
 // ===========================
 // 📦 Raw Property Access
 // ===========================
