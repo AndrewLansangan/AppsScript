@@ -141,7 +141,7 @@ function hideSheetColumns(sheet, columnNames, headers) {
 // ===========================
 // 📋 ETAG Sheet Handling
 // ===========================
-
+//FIXME add new and old headers for the etags implement the differences this is supposed to be used for per email in listGroups()
 function getOrCreateEtagCacheSheet() {
     const ss = SpreadsheetApp.openById(getSheetId());
     let sheet = ss.getSheetByName('ETAG_CACHE');
@@ -410,8 +410,43 @@ function doHeadersMatch(sheet, expectedHeaders) {
 function initializeGroupSettingsSheets() {
     debugLog("🛠 Manually initializing group settings sheets...");
 
-    getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+    getOrCreateSheet(SHEET_NAMES.GROUP_LIST, HEADERS[SHEET_NAMES.GROUP_LIST]);
     setupReportSheets(); // This handles Detail Report, Discrepancies, etc.
 
     debugLog("✅ Group settings sheets initialized.");
+}
+
+/**
+ * Checks if a sheet with the given name exists in the active spreadsheet.
+ * @param {string} sheetName
+ * @returns {boolean}
+ */
+function doesSheetExist(sheetName) {
+    const ss = SpreadsheetApp.openById(getSheetId());
+    return ss.getSheetByName(sheetName) !== null;
+}
+
+/**
+ * Logs a domain-level ETag change into the ACTIVITY LOG sheet.
+ *
+ * @param {string} domain - The domain you're tracking (e.g., "grey-box.ca").
+ * @param {string} oldETag - Previously stored domain ETag.
+ * @param {string} newETag - Newly fetched domain ETag.
+ */
+function recordDomainETagChange(domain, oldETag, newETag) {
+    const sheet = getOrCreateSheet(SHEET_NAMES.ACTIVITY, HEADERS[SHEET_NAMES.ACTIVITY]);
+    const timestamp = new Date().toISOString();
+
+    const row = [
+        timestamp,        // Timestamp
+        'Directory',      // Source
+        'Domain ETag',    // Entity Type
+        domain,           // Email / ID
+        'ETag Changed',   // Action
+        `${oldETag} → ${newETag}`, // ETag / Ref
+        ''                // Details (optional)
+    ];
+
+    sheet.appendRow(row);
+    debugLog(`📝 Logged domain ETag change for ${domain}`);
 }

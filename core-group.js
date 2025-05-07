@@ -42,7 +42,7 @@ function fetchSingleGroupData(email) {
  * @param options
  *
  * ## Returns:
- * @returns {NormalizedDirectoryGroup[]} Array of normalized group objects with the following structure:
+ * @returns {{normalizedData: *[], metaData: *[]}} Array of normalized group objects with the following structure:
  * - `email {string}` — Group's email address.
  * - `name {string}` — Group's name.
  * - `description {string}` — Group's description.
@@ -57,9 +57,10 @@ function fetchSingleGroupData(email) {
 
 function fetchAllGroupData(domain, options = EXECUTION_MODE) {
     const { bypassETag = false, manual = false } = options;
+
     if (manual) {
         debugLog(`⚙️ Manual mode enabled — skipping fetch for domain ${domain}`);
-        return [];
+        return { normalizedData: [], metaData: [] };
     }
 
     const groups = [];
@@ -67,24 +68,25 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
     const oldDomainETag = !bypassETag ? getDomainETag(domain) : null;
     const headers = buildAuthHeaders({ etag: oldDomainETag });
 
+    const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
+    let etagMatched = false;
+
     do {
         let url = `${ADMIN_DIRECTORY_API_BASE_URL}?domain=${encodeURIComponent(domain)}`;
         if (pageToken) url += `&pageToken=${pageToken}`;
 
-        const res = UrlFetchApp.fetch(url, {
-            headers,
-            muteHttpExceptions: true
-        });
-
+        const res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
         const status = res.getResponseCode();
+
         if (status === 304) {
             debugLog(`🔁 No changes for ${domain} — ETag matched.`);
-            return [];
+            etagMatched = true;
+            break;
         }
 
         if (status !== 200) {
             errorLog(`❌ Error fetching group list: ${res.getContentText()}`);
-            return [];
+            return { normalizedData: [], metaData: [] };
         }
 
         const data = JSON.parse(res.getContentText());
@@ -97,14 +99,60 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
             setDomainETag(domain, newDomainETag);
         }
 
-        const currentGroups = (data.groups || []).map(normalizeDirectoryGroup);
+        const currentGroups = (data.groups || []).map(group => ({
+            email: group.email,
+            name: group.name,
+            description: group.description,
+            directMembersCount: group.directMembersCount || 0,
+            adminCreated: group.adminCreated || false,
+            etag: group.etag || 'Not Found'
+        }));
+
         groups.push(...currentGroups);
-        debugLog("📦 Fetched groups count:", groups.length);
         pageToken = data.nextPageToken;
     } while (pageToken);
 
-    debugLog(`📊 group preview: ${JSON.stringify(groups.slice(0, 2), null, 2)}`);
-    return groups;
+    // 🛡️ Fallback if no groups returned due to ETag match
+    if (etagMatched && groups.length === 0) {
+        debugLog("💡 ETag matched — using fallback.");
+        const fallback = getStoredData("GROUP_NORMALIZED_DATA") || [];
+        return { normalizedData: fallback, metaData: [] };
+    }
+
+    // 🧾 Prepare normalizedData and metaData for saving
+    const normalizedData = [];
+    const metaData = [];
+    const now = new Date().toISOString();
+
+    for (const group of groups) {
+        const { businessHash, fullHash } = generateGroupSettingsHashPair(group);
+        const oldETag = oldETagMap[group.email] || '';
+        const newETag = group.etag || 'Not Found';
+        const isModified = oldETag !== newETag;
+        const lastModified = isModified && oldETag ? now : '';
+
+        normalizedData.push({
+            email: group.email,
+            name: group.name,
+            description: group.description,
+            directMembersCount: group.directMembersCount || 0,
+            adminCreated: group.adminCreated || false,
+            lastModified
+        });
+
+        metaData.push({
+            email: group.email,
+            businessHash,
+            fullHash,
+            oldBusinessHash: '', // Placeholder — not stored yet
+            oldFullHash: '',     // Placeholder — not stored yet
+            oldETag,
+            newETag,
+            lastModified
+        });
+    }
+
+    return { normalizedData, metaData };
 }
 
 function fetchGroupSettings(email, options = EXECUTION_MODE) {

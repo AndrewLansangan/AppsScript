@@ -21,85 +21,72 @@ function regenerateSheetsWithConfirmation() {
     }
 }
 
-//FIXME GroupEmails not printing etags on Google Sheets
-function listGroups(options = EXECUTION_MODE) {
-    const {
-        bypassETag = false,
-        bypassHash = false,
-        manual = false,
-        dryRun = false } = options;
-
+function listGroups(bypassETag = true) {
     return benchmark("listGroups", () => {
         try {
-            const groupData = fetchAllGroupData(getWorkspaceDomain(), options);
+            // 🛠️ Merge EXECUTION_MODE with runtime override
+            const executionOptions = { ...EXECUTION_MODE, bypassETag };
+            const { normalizedData, metaData } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
 
-            if (!Array.isArray(groupData) || groupData.length === 0) {
+            if (!Array.isArray(normalizedData) || normalizedData.length === 0) {
                 debugLog("No valid group data retrieved.");
                 return [];
             }
 
-            const groupEmails = groupData.map(group => group.email);
-            debugLog(`Fetched ${groupData.length} groups.`);
+            debugLog(`Fetched ${normalizedData.length} groups.`);
 
-            if (!bypassHash && !hasDataChanged("GROUP_EMAILS", groupData) && !isSheetEmpty) {
-                debugLog("✅ No changes in group data. Skipping processing.");
-                return groupData;
+            // 📥 Write normalized business data to GROUP_EMAILS sheet
+            writeGroupListToSheet(normalizedData);
+
+            // 🧾 Write technical metadata to GROUP_LIST_META sheet
+            const metaSheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST_META, HEADERS[SHEET_NAMES.GROUP_LIST_META]);
+            const metaRows = metaData.map(meta => [
+                meta.email,
+                meta.businessHash,
+                meta.fullHash,
+                meta.oldBusinessHash,
+                meta.oldFullHash,
+                meta.oldETag,
+                meta.newETag,
+                meta.lastModified
+            ]);
+
+            if (metaSheet.getLastRow() > 1) {
+                metaSheet.getRange(2, 1, metaSheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_LIST_META].length).clearContent();
             }
+            metaSheet.getRange(2, 1, metaRows.length, HEADERS[SHEET_NAMES.GROUP_LIST_META].length).setValues(metaRows);
+            formatSheet(metaSheet, HEADERS[SHEET_NAMES.GROUP_LIST_META]);
 
-            const newHash = hashGroupList(groupData);
-            logEventToSheet('GroupList', 'all groups', 'Fetched & Updated', newHash, `Fetched ${groupData.length} groups`);
+            // 🔍 Detect changes in normalized group data
+            const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
+            storeDataAndHash("GROUP_NORMALIZED_DATA", normalizedData);
 
-            const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
-            const now = new Date().toISOString();
-
-            const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
-            const modifiedMap = {};
-
-            if (sheet.getLastRow() > 1) {
-                const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).getValues();
-                const emailIndex = 0;
-                const lastModifiedIndex = HEADERS[SHEET_NAMES.GROUP_EMAILS].indexOf("Last Modified");
-
-                existing.forEach(row => {
-                    const email = row[emailIndex];
-                    const modified = row[lastModifiedIndex];
-                    if (email) modifiedMap[email] = modified;
-                });
-            }
-
-            const newETagMap = {};
-            const rows = groupData.map(group => {
-                const oldETag = oldETagMap[group.email] || '';
-                const newETag = group.etag || 'Not Found';
-                const isModified = oldETag !== newETag;
-                const lastModified = isModified && oldETag ? now : modifiedMap[group.email] || '';
-                newETagMap[group.email] = newETag;
-
-                return [
-                    group.email,
-                    group.name || '',
-                    group.description || '',
-                    group.directMembersCount || 0,
-                    group.adminCreated || false,
-                    oldETag,
-                    newETag,
-                    lastModified
-                ];
+            // 🧠 Store per-group hashes for future diffing
+            const perGroupHashMap = {};
+            metaData.forEach(meta => {
+                perGroupHashMap[meta.email] = {
+                    businessHash: meta.businessHash,
+                    fullHash: meta.fullHash
+                };
             });
+            storeGroupSettingsHashMap(perGroupHashMap);
 
-            if (sheet.getLastRow() > 1) {
-                sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).clearContent();
-            }
+            // 📋 Log audit-level differences in hashes
+            logHashDifferences(perGroupHashMap);
 
-            sheet.getRange(2, 1, rows.length, HEADERS[SHEET_NAMES.GROUP_EMAILS].length).setValues(rows);
-            formatSheet(sheet, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            // 🕒 Record sync timestamp
+            PropertiesService.getScriptProperties().setProperty("LAST_GROUP_SYNC", new Date().toISOString());
 
-            PropertiesService.getScriptProperties().setProperty("GROUP_ETAGS", JSON.stringify(newETagMap));
-            storeDataAndHash("GROUP_EMAILS", groupData);
-            saveGroupEtagsToSheet(newETagMap);
+            // 🪪 Generate summary hash + log event
+            const summaryHash = hashGroupList(normalizedData);
+            logEventToSheet("GroupList", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups`);
 
-            debugLog(`✅ Processed and saved ${rows.length} groups.`);
-            return groupData;
+            debugLog(changed
+                ? `✅ Group list changed — data written and logged.`
+                : `✅ No change in group list — data still written.`);
+
+            return normalizedData;
+
         } catch (err) {
             errorLog("❌ Error in listGroups", err.toString());
             return [];
@@ -108,14 +95,14 @@ function listGroups(options = EXECUTION_MODE) {
 }
 
 /**
-// FIXME Missing or failing calls to these in listGroupSettings():
-//
-// writeDetailReport(detailRows)
-//
-// writeDiscrepancyLog(violations)
-//
-// writeSummaryReport(rowMap, violationKeyMap)
-*/
+ // FIXME Missing or failing calls to these in listGroupSettings():
+ //
+ // writeDetailReport(detailRows)
+ //
+ // writeDiscrepancyLog(violations)
+ //
+ // writeSummaryReport(rowMap, violationKeyMap)
+ */
 
 function listGroupSettings(options = EXECUTION_MODE) {
     const {bypassETag = true, bypassHash = true, manual = true, dryRun = true} = options
@@ -129,7 +116,7 @@ function listGroupSettings(options = EXECUTION_MODE) {
             return [];
         }
 
-        const { changed, all, errored } = fetchAllGroupSettings(groupEmails, options);
+        const {changed, all, errored} = fetchAllGroupSettings(groupEmails, options);
         if (!Array.isArray(all) || all.length === 0) {
             errorLog("❌ No group settings fetched.");
             return [];
@@ -139,10 +126,13 @@ function listGroupSettings(options = EXECUTION_MODE) {
         debugLog(`✅ Groups with settings: ${entriesWithSettings.length}`);
 
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
+
+        const previousHashMap = loadGroupSettingsHashMap();               // ✅ load before overwrite
         const newHashMap = generateGroupSettingsHashMap(validForHashing);
 
-        logHashDifferences(newHashMap);
-        storeGroupSettingsHashMap(newHashMap);
+        logHashDifferences(newHashMap, previousHashMap);                  // ✅ compare against *real* previous
+        storeGroupSettingsHashMap(newHashMap);                            // ✅ then store new
+
         debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
 
         if (validForHashing.length > 0 && !options.dryRun) {

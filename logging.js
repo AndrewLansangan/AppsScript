@@ -81,29 +81,45 @@ function listLogs(message, data = null, enable = true) {
   if (enable) debugLog(`📋 List Log: ${message}`, data);
 }
 
-function logHashDifferences(newHashMap) {
-  const oldHashMap = loadGroupSettingsHashMap();
+function logHashDifferences(newHashMap, oldHashMap = loadGroupSettingsHashMap()) {
+  let count = 0;
+  const maxLogs = 10;
 
-  Object.entries(newHashMap).forEach(([email, newHashes]) => {
+  for (const [email, newHashes] of Object.entries(newHashMap)) {
+    if (count >= maxLogs) {
+      debugLog(`📉 Output limited to ${maxLogs} groups. Skipping additional logs...`);
+      break;
+    }
+
     const oldHashes = oldHashMap[email];
 
     if (!oldHashes) {
-      debugLog(`🔔 ${email} added to hash tracking.`);
-      return;
+      debugLog(`🆕 ${email}: No previous hashes found. Added to tracking.`);
+      count++;
+      continue;
     }
 
     const businessChanged = oldHashes.businessHash !== newHashes.businessHash;
     const fullChanged = oldHashes.fullHash !== newHashes.fullHash;
 
-    debugLog(`🔍 ${email}:`);
-    debugLog(`  businessHash changed: ${businessChanged}`);
-    debugLog(`    old → ${oldHashes.businessHash || 'N/A'}`);
-    debugLog(`    new → ${newHashes.businessHash}`);
+    if (!businessChanged && !fullChanged) {
+      debugLog(`✅ ${email}: No changes detected.`);
+    } else {
+      debugLog(`🔄 ${email}: Hash changes detected.`);
+      if (businessChanged) {
+        debugLog(`  ├─ businessHash changed`);
+        debugLog(`  │   old → ${oldHashes.businessHash}`);
+        debugLog(`  │   new → ${newHashes.businessHash}`);
+      }
+      if (fullChanged) {
+        debugLog(`  └─ fullHash changed`);
+        debugLog(`      old → ${oldHashes.fullHash}`);
+        debugLog(`      new → ${newHashes.fullHash}`);
+      }
+    }
 
-    debugLog(`  fullHash changed: ${fullChanged}`);
-    debugLog(`    old → ${oldHashes.fullHash || 'N/A'}`);
-    debugLog(`    new → ${newHashes.fullHash}`);
-  });
+    count++;
+  }
 }
 
 // ========== Benchmarking & Memory ==========

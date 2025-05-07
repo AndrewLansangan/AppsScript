@@ -16,13 +16,19 @@
  */
 
 // ===========================
-// 🔄 Shared Utility Functions
+// 🔄 Array & String Utilities
 // ===========================
-
 function byteArrayToHex(bytes) {
     return bytes.map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
 }
+//TODO Delete this
+// function getEmailArray(groups) {
+//     return groups.map(group => group.email).filter(Boolean);
+// }
 
+// ===========================
+// 📐 Normalization
+// ===========================
 function normalizeDirectoryGroup(group) {
     return {
         email: group.email,
@@ -34,6 +40,9 @@ function normalizeDirectoryGroup(group) {
     };
 }
 
+// ===========================
+// ⏱️ Benchmarking Utility
+// ===========================
 function benchmark(label, fn) {
     const start = new Date();
     try {
@@ -49,15 +58,10 @@ function benchmark(label, fn) {
 }
 
 // ===========================
-// 📁 Group List Hashing
+// 🔒 Group Directory Hashing
 // ===========================
-
 function hashGroupList(dataArray) {
-    if (!Array.isArray(dataArray) || dataArray.length === 0) {
-        throw new Error('Invalid input: expected a non-empty array of group objects');
-    }
-
-    const groupList = dataArray.map(group => ({
+    const simplified = dataArray.map(group => ({
         email: group.email,
         name: group.name,
         description: group.description,
@@ -65,7 +69,7 @@ function hashGroupList(dataArray) {
         adminCreated: group.adminCreated || false
     }));
 
-    const sorted = groupList.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+    const sorted = simplified.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
     const json = JSON.stringify(sorted);
     return byteArrayToHex(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json));
 }
@@ -75,13 +79,12 @@ function hasDataChanged(dataType, newData) {
 }
 
 // ===========================
-// 🛡️ Settings Hashing
+// 🛡️ Settings API Hashing
 // ===========================
-
 function generateGroupSettingsHashPair(settings) {
     const keysToTrack = Object.keys(UPDATED_SETTINGS).sort();
     const businessData = {};
-    keysToTrack.forEach(k => (businessData[k] = settings[k] ?? null));
+    keysToTrack.forEach(k => businessData[k] = settings[k] ?? null);
 
     const businessHash = Utilities.base64Encode(
         Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, JSON.stringify(businessData))
@@ -107,19 +110,6 @@ function generateGroupSettingsHashMap(entries) {
     return hashMap;
 }
 
-function computeDualHashMap(groupSettingsList) {
-    const hashMap = {};
-    groupSettingsList.forEach(({ email, hashes }) => {
-        if (email && hashes) {
-            hashMap[email] = {
-                businessHash: hashes.businessHash,
-                fullHash: hashes.fullHash
-            };
-        }
-    });
-    return hashMap;
-}
-
 function getGroupsWithHashChanges(newMap) {
     const oldMap = loadGroupSettingsHashMap();
     return Object.entries(newMap).reduce((changed, [email, newHashes]) => {
@@ -134,34 +124,20 @@ function getGroupsWithHashChanges(newMap) {
 // ===========================
 // 💾 ScriptProperties Storage
 // ===========================
+function getStoredData(dataType) {
+    const raw = PropertiesService.getScriptProperties().getProperty(dataType);
+    return raw ? JSON.parse(raw) : null;
+}
 
 function getStoredHash(dataType) {
     return PropertiesService.getScriptProperties().getProperty(`${dataType}_HASH`) || null;
 }
 
-function getStoredData(dataType) {
-    const raw = PropertiesService.getScriptProperties().getProperty(`${dataType}`);
-    return raw ? JSON.parse(raw) : null;
-}
-
-function saveGroupEmails(groupData) {
-    if (!Array.isArray(groupData)) {
-        throw new Error('Invalid input: expected an array of group objects');
-    }
-    const groupEmails = getEmailArray(groupData);
-    PropertiesService.getScriptProperties().setProperty("GROUP_EMAILS", JSON.stringify(groupEmails));
-    debugLog(`💾 Saved ${groupEmails.length} group emails into ScriptProperties.`);
-}
-
-function loadGroupEmails() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
-    if (!raw) return [];
-    try {
-        return JSON.parse(raw);
-    } catch (e) {
-        errorLog("❌ Failed to parse GROUP_EMAILS", e.toString());
-        return [];
-    }
+function storeDataAndHash(dataType, newData) {
+    const json = JSON.stringify(newData);
+    const hash = hashGroupList(newData);
+    PropertiesService.getScriptProperties().setProperty(dataType, json);
+    PropertiesService.getScriptProperties().setProperty(`${dataType}_HASH`, hash);
 }
 
 function storeGroupSettingsHashMap(hashMap) {
@@ -173,10 +149,6 @@ function loadGroupSettingsHashMap() {
     return raw ? JSON.parse(raw) : {};
 }
 
-// ===========================
-// 🧹 Cleanup Helpers
-// ===========================
-
 function cleanupLegacyHash(dataType) {
     const raw = getStoredHash(dataType);
     if (raw?.startsWith("[Ljava.lang.Object;")) {
@@ -186,9 +158,8 @@ function cleanupLegacyHash(dataType) {
 }
 
 // ===========================
-// 🌐 API Utilities
+// 🌐 API Request Utilities
 // ===========================
-
 function buildAuthHeaders({ json = false, etag = null } = {}) {
     const headers = { Authorization: `Bearer ${getCachedAccessToken()}` };
     if (json) headers['Content-Type'] = 'application/json';
@@ -197,9 +168,8 @@ function buildAuthHeaders({ json = false, etag = null } = {}) {
 }
 
 function fetchWithDefaults(url, options = {}) {
-    return UrlFetchApp.fetch(url, { muteHttpExceptions: true, ...options });
-}
-
-function getEmailArray(groups) {
-    return groups.map(group => group.email).filter(email => !!email);
+    return UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        ...options
+    });
 }
