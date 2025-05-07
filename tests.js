@@ -99,3 +99,8 @@ function runManualGroupSync() {
   const results = fetchAllGroupSettings(emails, { manual: false });
   logEventToSheet('ManualRun', 'group settings', 'Completed', '', `Processed ${emails.length} groups`);
 }
+function testWriteAllSheets() {
+  regenerateSheets();
+  writeGroupListToSheet([{ email: 'example@domain.com', name: 'Test Group', description: 'For testing', directMembersCount: 5, adminCreated: true }]);
+  recordDomainETagChange('grey-box.ca', 'etag-old', 'etag-new');
+}

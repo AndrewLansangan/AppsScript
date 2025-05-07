@@ -15,6 +15,7 @@
     "logging.js",
     "constants.js",
     "config.js",
+    "storage.js",
     "auth.js",
     "utils.js",
     "sheet.js",
