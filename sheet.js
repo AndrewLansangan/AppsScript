@@ -30,7 +30,18 @@ function getOrCreateSheet(sheetName, expectedHeaders = null) {
             debugLog(`🧾 Set headers for sheet: ${sheetName}`);
         }
 
-        formatSheet(sheet, expectedHeaders);
+        // ✅ Only apply formatting if not already marked
+        const markerCell = sheet.getRange(1, expectedHeaders.length + 1); // Next column
+        const markerValue = markerCell.getValue();
+
+        if (markerValue !== '✔️ FORMATTED') {
+            formatSheet(sheet, expectedHeaders);
+            markerCell.setValue('✔️ FORMATTED');
+            markerCell.setFontColor('gray').setFontSize(8).setHorizontalAlignment('right');
+            debugLog(`🎨 Formatted sheet "${sheetName}" and set format marker.`);
+        } else {
+            debugLog(`🎯 Sheet "${sheetName}" already formatted — skipping.`);
+        }
     }
 
     return sheet;
