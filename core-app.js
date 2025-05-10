@@ -2,25 +2,7 @@
 // 🌐 App Entry Point and Workflows
 // ===========================
 
-/**
- * Regenerates sheets only after user confirms.
- */
-function regenerateSheetsWithConfirmation() {
-    const ui = SpreadsheetApp.getUi();
-    const response = ui.alert(
-        '⚠️ Confirm Sheet Regeneration',
-        'Are you sure you want to regenerate all required sheets? This will create missing sheets and headers but will NOT delete any existing data.',
-        ui.ButtonSet.YES_NO
-    );
-
-    if (response === ui.Button.YES) {
-        regenerateSheets();
-        ui.alert('✅ Sheet regeneration completed.');
-    } else {
-        ui.alert('❌ Sheet regeneration cancelled.');
-    }
-}
-function listGroups(bypassETag = true) {
+function listGroups(bypassETag = false) {
     return benchmark("listGroups", () => {
         try {
             const executionOptions = { ...EXECUTION_MODE, bypassETag };
@@ -33,34 +15,11 @@ function listGroups(bypassETag = true) {
 
             debugLog(`Fetched ${normalizedData.length} groups.`);
 
-            // ✅ Write normalized business data to GROUP_EMAILS
+            // ✅ Write normalized business data to GROUP_LIST
             writeGroupListToSheet(normalizedData);
 
-            // ✅ Write metaData to GROUP_LIST_META
-            const metaSheetName = SHEET_NAMES.GROUP_LIST_META;
-            const metaHeaders = HEADERS[metaSheetName];
-            const metaSheet = getOrCreateSheet(metaSheetName, metaHeaders);
-            const metaRows = metaData.map(meta => [
-                meta.email,
-                meta.businessHash,
-                meta.fullHash,
-                meta.oldBusinessHash,
-                meta.oldFullHash,
-                meta.oldETag,
-                meta.newETag,
-                meta.lastModified
-            ]);
-
-            // Validate before writing and formatting
-            if (metaRows.length && metaHeaders?.length) {
-                if (metaSheet.getLastRow() > 1) {
-                    metaSheet.getRange(2, 1, metaSheet.getLastRow() - 1, metaHeaders.length).clearContent();
-                }
-                metaSheet.getRange(2, 1, metaRows.length, metaHeaders.length).setValues(metaRows);
-                // formatSheet(metaSheet, metaHeaders);
-            } else {
-                debugLog("⚠️ Skipping formatting. Sheet or headers invalid.");
-            }
+            // ✅ Write technical metadata to GROUP_LIST_META
+            writeGroupMetaSheet(metaData); // ⬅️ your new abstraction
 
             // 🔁 Detect changes and store normalized data hash
             const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
@@ -114,8 +73,7 @@ function listGroupSettings(options = EXECUTION_MODE) {
 
         if (!Array.isArray(groupEmails) || groupEmails.length === 0) {
             errorLog("❌ No group emails resolved — skipping group settings check.");
-            setupReportSheets();
-            getOrCreateSheet(SHEET_NAMES.GROUP_EMAILS, HEADERS[SHEET_NAMES.GROUP_EMAILS]);
+            getOrCreateSheet(SHEET_NAMES.DISCREPANCIES, HEADERS[SHEET_NAMES.DISCREPANCIES]);
             return [];
         }
 

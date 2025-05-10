@@ -1,17 +1,17 @@
 // ===================================================
-// 📊 SHEETS MODULE — Finalized Sheet Handling & Format
+// 📊 SHEETS MODULE — Organized & Layered
 // ===================================================
 
 // ===========================
-// 📋 Constants
+// 🧱 CORE PRIMITIVES
 // ===========================
 
-const ETAG_HEADERS = ["Email", "ETag"];
-
-// ===========================
-// 📋 Sheet Creation & Header Safety
-// ===========================
-
+/**
+ * Retrieves or creates a sheet and ensures headers + formatting.
+ * @param {string} sheetName
+ * @param {string[]} expectedHeaders
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet}
+ */
 function getOrCreateSheet(sheetName, expectedHeaders = null) {
     const ss = SpreadsheetApp.openById(getSheetId());
     let sheet = ss.getSheetByName(sheetName);
@@ -30,55 +30,20 @@ function getOrCreateSheet(sheetName, expectedHeaders = null) {
             debugLog(`🧾 Set headers for sheet: ${sheetName}`);
         }
 
-        // ✅ Only apply formatting if not already marked
-        const markerCell = sheet.getRange(1, expectedHeaders.length + 1); // Next column
+        const markerCell = sheet.getRange(1, expectedHeaders.length + 1);
         const markerValue = markerCell.getValue();
 
         if (markerValue !== '✔️ FORMATTED') {
             formatSheet(sheet, expectedHeaders);
             markerCell.setValue('✔️ FORMATTED');
             markerCell.setFontColor('gray').setFontSize(8).setHorizontalAlignment('right');
-            debugLog(`🎨 Formatted sheet "${sheetName}" and set format marker.`);
-        } else {
-            debugLog(`🎯 Sheet "${sheetName}" already formatted — skipping.`);
         }
     }
 
     return sheet;
 }
 
-function initializeSheets() {
-    Object.entries(SHEET_CONFIG).forEach(([name, headers]) => {
-        getOrCreateSheet(name, headers);
-    });
-}
-
-function regenerateSheets() {
-    logEvent('INFO', 'System', 'Sheets', 'Regeneration Started');
-
-    try {
-        initializeSheets();
-        setupReportSheets();
-        getOrCreateEtagCacheSheet();
-
-        logEvent('INFO', 'System', 'Sheets', 'Regeneration Completed');
-    } catch (e) {
-        logEvent('ERROR', 'System', 'Sheets', 'Regeneration Failed', '', e.message);
-        throw e;
-    }
-}
-
-
-// ===========================
-// 📐 Sheet Formatting Utilities
-// ===========================
-
 function formatSheet(sheet, headers, options = {}) {
-    if (!sheet || !Array.isArray(headers) || headers.length === 0) {
-        debugLog(`⚠️ Skipping formatting. Sheet or headers invalid.`);
-        return;
-    }
-
     const config = FORMATTING_CONFIG[sheet.getName()] || {};
     const opts = {
         wrap: options.wrap ?? true,
@@ -88,98 +53,67 @@ function formatSheet(sheet, headers, options = {}) {
     };
 
     if (opts.style) styleSheetHeaders(sheet, headers);
-
-    if (opts.hide && Array.isArray(config.hide)) {
-        hideSheetColumns(sheet, config.hide, headers);
-    }
-
-    if (opts.resize && Array.isArray(config.resize)) {
-        autoResizeSheetColumns(sheet, config.resize, headers);
-    }
-
-    if (opts.wrap && Array.isArray(config.wrap)) {
-        const lastRow = sheet.getLastRow();
-        if (lastRow > 1) {
-            autoWrapSheetColumns(sheet, config.wrap, headers);
-        } else {
-            debugLog(`ℹ️ Skipped wrap: no data rows to format in "${sheet.getName()}"`);
-        }
-    }
+    if (opts.hide && config.hide) hideSheetColumns(sheet, config.hide, headers);
+    if (opts.resize && config.resize) autoResizeSheetColumns(sheet, config.resize, headers);
+    if (opts.wrap && config.wrap) autoWrapSheetColumns(sheet, config.wrap, headers);
 }
-//FIXME autoFormats is busted.
+
 function styleSheetHeaders(sheet, headers) {
-    if (!Array.isArray(headers) || headers.length === 0) return;
     const range = sheet.getRange(1, 1, 1, headers.length);
     range.setFontWeight("bold").setHorizontalAlignment("center");
     sheet.setFrozenRows(1);
 }
 
-function autoResizeSheetColumns(sheet, columnNames, headers) {
-    columnNames.forEach(col => {
-        const colIndex = headers.indexOf(col);
-        if (colIndex !== -1) {
-            sheet.autoResizeColumn(colIndex + 1);
-        }
+function autoResizeSheetColumns(sheet, columns, headers) {
+    columns.forEach(col => {
+        const i = headers.indexOf(col);
+        if (i !== -1) sheet.autoResizeColumn(i + 1);
     });
 }
 
-function autoWrapSheetColumns(sheet, columnNames, headers) {
-    columnNames.forEach(col => {
-        const colIndex = headers.indexOf(col);
-        if (colIndex !== -1) {
-            const lastRow = sheet.getLastRow();
-            if (lastRow > 1) {
-                const range = sheet.getRange(2, colIndex + 1, lastRow - 1);
-                range.setWrap(true);
-            }
-        }
+function autoWrapSheetColumns(sheet, columns, headers) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
+    columns.forEach(col => {
+        const i = headers.indexOf(col);
+        if (i !== -1) sheet.getRange(2, i + 1, lastRow - 1).setWrap(true);
     });
 }
 
-function hideSheetColumns(sheet, columnNames, headers) {
-    columnNames
-        .filter(col => headers.includes(col))
-        .forEach(col => {
-            const colIndex = headers.indexOf(col);
-            sheet.hideColumns(colIndex + 1);
-            debugLog(`🙈 Hiding column "${col}" at index ${colIndex + 1}`);
-        });
+function hideSheetColumns(sheet, columns, headers) {
+    columns.forEach(col => {
+        const i = headers.indexOf(col);
+        if (i !== -1) sheet.hideColumns(i + 1);
+    });
+}
+
+function doHeadersMatch(sheet, expectedHeaders) {
+    const actual = sheet.getRange(1, 1, 1, expectedHeaders.length).getValues()[0];
+    return JSON.stringify(actual) === JSON.stringify(expectedHeaders);
+}
+
+
+// ===========================
+// ⚙️ INITIALIZATION LAYER
+// ===========================
+
+/**
+ * Initializes all configured sheets.
+ * @returns {void}
+ */
+function initializeAllSheets() {
+    Object.entries(SHEET_CONFIG).forEach(([name, headers]) => {
+        getOrCreateSheet(name, headers);
+    });
 }
 
 // ===========================
-// 📋 ETAG Sheet Handling
+// 📋 WRITER FUNCTIONS
 // ===========================
-//FIXME add new and old headers for the etags implement the differences this is supposed to be used for per email in listGroups()
-function getOrCreateEtagCacheSheet() {
-    const ss = SpreadsheetApp.openById(getSheetId());
-    let sheet = ss.getSheetByName('ETAG_CACHE');
-
-    if (!sheet) {
-        sheet = ss.insertSheet('ETAG_CACHE');
-        debugLog(`🆕 Created ETAG_CACHE sheet`);
-    }
-
-    initializeEtagCacheSheet(sheet);
-    sheet.hideSheet();
-    return sheet;
-}
-
-function initializeEtagCacheSheet(sheet) {
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const headerMismatch = JSON.stringify(headers) !== JSON.stringify(ETAG_HEADERS);
-
-    if (headerMismatch) {
-        sheet.clearContents();
-        sheet.appendRow(ETAG_HEADERS);
-        debugLog(`🧾 Reset headers for ETAG_CACHE sheet.`);
-    }
-}
 
 function writeGroupListToSheet(groupData) {
     const headers = HEADERS[SHEET_NAMES.GROUP_LIST];
     const sheet = getOrCreateSheet(SHEET_NAMES.GROUP_LIST, headers);
-
-    // Format first
     formatSheet(sheet, headers);
 
     const now = new Date().toISOString();
@@ -191,206 +125,38 @@ function writeGroupListToSheet(groupData) {
         })
     );
 
-    // Clear old rows
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
-
-    if (rows.length > 0) {
-        sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-        debugLog(`✅ Inserted ${rows.length} rows into "${SHEET_NAMES.GROUP_LIST}"`);
-    } else {
-        debugLog(`ℹ️ No rows to write to "${SHEET_NAMES.GROUP_LIST}"`);
-    }
+    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    if (rows.length) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
 
-/**
- * Attempts to resolve group emails from cache or sheet.
- * Returns [] if neither source is available.
- */
-function resolveGroupEmails() {
-    // ✅ Step 1: Try ScriptProperties cache
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
-    if (raw) {
-        try {
-            const emails = JSON.parse(raw).map(obj => obj.email).filter(Boolean);
-            if (emails.length > 0) {
-                debugLog(`📦 Loaded ${emails.length} group emails from ScriptProperties`);
-                return emails;
-            }
-        } catch (e) {
-            errorLog("❌ Failed to parse GROUP_EMAILS from ScriptProperties", e.toString());
-        }
-    }
-
-    // 🛟 Step 2: Fallback — read from group email sheet (only if it exists)
-    try {
-        const ss = SpreadsheetApp.openById(getSheetId());
-        const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_LIST);
-
-        // ⚠️ If sheet does not exist, return empty — do NOT throw
-        if (!sheet) {
-            debugLog("⚠️ Group Emails sheet not found. Returning empty list.");
-            return [];
-        }
-
-        const lastRow = sheet.getLastRow();
-        if (lastRow <= 1) {
-            debugLog("📄 Group Emails sheet has no data.");
-            return [];
-        }
-
-        const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        const emails = values.flat().filter(email => typeof email === 'string' && email.includes('@'));
-
-        debugLog(`📄 Loaded ${emails.length} group emails from sheet`);
-        return emails;
-    } catch (e) {
-        errorLog("❌ Failed to resolve group emails from sheet", e.toString());
-        return [];
-    }
-}
-
-function writeGroupListHashMap(groupData) {
-    const headers = ['Email', 'Business Hash', 'Timestamp'];
-    const sheet = getOrCreateSheet('Group Email Hashes', headers);
-    formatSheet(sheet, headers);
-
-    const now = new Date().toISOString();
-
-    const rows = groupData.map(group => {
-        const normalized = {
-            email: group.email,
-            name: group.name,
-            description: group.description,
-            directMembersCount: group.directMembersCount || 0,
-            adminCreated: group.adminCreated || false
-        };
-
-        const hash = hashGroupList([normalized]); // you can also use hashSingleGroup if you split it
-        return [group.email, hash, now];
-    });
-
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
-
-    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    debugLog(`✅ Wrote group hashes for ${rows.length} groups`);
-}
-globalThis.getOrCreateSheet = getOrCreateSheet;
-
-function checkSheetsExist() {
-    const sheetNames = [
-        'Group Hashes',
-        'Discrepancies',
-        'Detail Report',
-        'Summary Report',
-        'RawData'
-    ];
-    const ss = SpreadsheetApp.openById(getSheetId());
-    const existing = ss.getSheets().map(s => s.getName());
-    Logger.log('Missing sheets: ' + sheetNames.filter(name => !existing.includes(name)).join(', '));
-}
-function setupReportSheets() {
-    const REPORT_CONFIG = {
-        [SHEET_NAMES.DISCREPANCIES]: HEADERS.DISCREPANCIES,
-        [SHEET_NAMES.SUMMARY_REPORT]: HEADERS.SUMMARY_REPORT,
-        [SHEET_NAMES.DETAIL_REPORT]: HEADERS.DETAIL_REPORT,
-        [SHEET_NAMES.RAW]: HEADERS.RAW
-    };
-
-    Object.entries(REPORT_CONFIG).forEach(([name, headers]) => {
-        const sheet = getOrCreateSheet(name, headers);
-        if (sheet.getLastRow() === 0 && headers) {
-            sheet.appendRow(headers);
-            styleSheetHeaders(sheet, headers);
-        }
-    });
-
-    debugLog("✅ Report sheets initialized successfully.");
-}
 function writeDetailReport(detailRows) {
-    const headers = HEADERS.DETAIL_REPORT;
+    const headers = HEADERS[SHEET_NAMES.DETAIL_REPORT];
     const sheet = getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, headers);
-
-    if (!Array.isArray(detailRows) || detailRows.length === 0) {
-        debugLog("⚠️ No detail rows to write.");
-        return {};
-    }
-
-    if (!doHeadersMatch(sheet, headers)) {
-        errorLog("❌ Header mismatch in Detail Report sheet.");
-        return {};
-    }
-
-    // Clear existing content
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
-
-    // Write new rows
+    if (!doHeadersMatch(sheet, headers)) return {};
+    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    if (!detailRows?.length) return {};
     sheet.getRange(2, 1, detailRows.length, headers.length).setValues(detailRows);
-    debugLog(`✅ Wrote ${detailRows.length} rows to Detail Report`);
-
-    // Return map for summary
     const rowMap = {};
-    detailRows.forEach(row => {
-        const email = row[0];
-        rowMap[email] = (rowMap[email] || 0) + 1;
-    });
-
+    detailRows.forEach(([email]) => rowMap[email] = (rowMap[email] || 0) + 1);
     return rowMap;
 }
+
 function writeDiscrepancyLog(violations) {
-    const headers = HEADERS.DISCREPANCIES;
+    const headers = HEADERS[SHEET_NAMES.DISCREPANCIES];
     const sheet = getOrCreateSheet(SHEET_NAMES.DISCREPANCIES, headers);
-
-    if (!Array.isArray(violations) || violations.length === 0) {
-        debugLog("⚠️ No discrepancies to write.");
-        return;
-    }
-
-    if (!doHeadersMatch(sheet, headers)) {
-        errorLog("❌ Header mismatch in Discrepancies sheet.");
-        return;
-    }
-
-    // Clear old content
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
-
-    const rows = violations.map(v => [
-        v.email,
-        v.key,
-        v.expected,
-        v.actual,
-        new Date().toISOString()
-    ]);
-
+    if (!doHeadersMatch(sheet, headers)) return;
+    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    if (!violations?.length) return;
+    const rows = violations.map(v => [v.email, v.key, v.expected, v.actual, new Date().toISOString()]);
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    debugLog(`✅ Wrote ${rows.length} rows to Discrepancies`);
 }
+
 function writeSummaryReport(rowMap, keyMap) {
-    const headers = HEADERS.SUMMARY_REPORT;
+    const headers = HEADERS[SHEET_NAMES.SUMMARY_REPORT];
     const sheet = getOrCreateSheet(SHEET_NAMES.SUMMARY_REPORT, headers);
-
-    if (!rowMap || Object.keys(rowMap).length === 0) {
-        debugLog("⚠️ No summary rows to write.");
-        return;
-    }
-
-    if (!doHeadersMatch(sheet, headers)) {
-        errorLog("❌ Header mismatch in Summary Report sheet.");
-        return;
-    }
-
-    // Clear old content
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
-
+    if (!doHeadersMatch(sheet, headers)) return;
+    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    if (!rowMap || Object.keys(rowMap).length === 0) return;
     const now = new Date().toISOString();
     const rows = Object.entries(rowMap).map(([email, count]) => [
         email,
@@ -398,63 +164,78 @@ function writeSummaryReport(rowMap, keyMap) {
         (keyMap[email] || []).join(', '),
         now
     ]);
-
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    debugLog(`✅ Wrote ${rows.length} rows to Summary Report`);
 }
-function doHeadersMatch(sheet, expectedHeaders) {
-    const actual = sheet.getRange(1, 1, 1, expectedHeaders.length).getValues()[0];
-    const match = JSON.stringify(actual) === JSON.stringify(expectedHeaders);
-    if (!match) {
-        debugLog(`⚠️ Header mismatch in ${sheet.getName()}\nExpected: ${expectedHeaders.join(', ')}\nActual: ${actual.join(', ')}`);
+
+
+// ===========================
+// 🧪 UTILITIES
+// ===========================
+
+function resolveGroupEmails() {
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
+    if (raw) {
+        try {
+            const emails = JSON.parse(raw).map(obj => obj.email).filter(Boolean);
+            if (emails.length > 0) return emails;
+        } catch (e) {
+            errorLog("❌ Failed to parse GROUP_EMAILS", e.toString());
+        }
     }
-    return match;
+
+    try {
+        const sheet = SpreadsheetApp.openById(getSheetId()).getSheetByName(SHEET_NAMES.GROUP_LIST);
+        if (!sheet) return [];
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) return [];
+        const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        return values.flat().filter(email => typeof email === 'string' && email.includes('@'));
+    } catch (e) {
+        errorLog("❌ Failed to resolve group emails from sheet", e.toString());
+        return [];
+    }
 }
 
-/**
- * 🧰 Manually initializes all required sheets for group settings.
- * Includes: GROUP_EMAILS, Detail Report, Discrepancies, Summary Report
- */
-function initializeGroupSettingsSheets() {
-    debugLog("🛠 Manually initializing group settings sheets...");
-
-    getOrCreateSheet(SHEET_NAMES.GROUP_LIST, HEADERS[SHEET_NAMES.GROUP_LIST]);
-    setupReportSheets(); // This handles Detail Report, Discrepancies, etc.
-
-    debugLog("✅ Group settings sheets initialized.");
-}
-
-/**
- * Checks if a sheet with the given name exists in the active spreadsheet.
- * @param {string} sheetName
- * @returns {boolean}
- */
-function doesSheetExist(sheetName) {
-    const ss = SpreadsheetApp.openById(getSheetId());
-    return ss.getSheetByName(sheetName) !== null;
-}
-
-/**
- * Logs a domain-level ETag change into the ACTIVITY LOG sheet.
- *
- * @param {string} domain - The domain you're tracking (e.g., "grey-box.ca").
- * @param {string} oldETag - Previously stored domain ETag.
- * @param {string} newETag - Newly fetched domain ETag.
- */
 function recordDomainETagChange(domain, oldETag, newETag) {
     const sheet = getOrCreateSheet(SHEET_NAMES.ACTIVITY, HEADERS[SHEET_NAMES.ACTIVITY]);
     const timestamp = new Date().toISOString();
-
-    const row = [
-        timestamp,        // Timestamp
-        'Directory',      // Source
-        'Domain ETag',    // Entity Type
-        domain,           // Email / ID
-        'ETag Changed',   // Action
-        `${oldETag} → ${newETag}`, // ETag / Ref
-        ''                // Details (optional)
-    ];
-
+    const row = [timestamp, 'Directory', 'Domain ETag', domain, 'ETag Changed', `${oldETag} → ${newETag}`, ''];
     sheet.appendRow(row);
     debugLog(`📝 Logged domain ETag change for ${domain}`);
+}
+
+function checkSheetsExist() {
+    const required = Object.keys(SHEET_CONFIG);
+    const existing = SpreadsheetApp.openById(getSheetId()).getSheets().map(s => s.getName());
+    const missing = required.filter(name => !existing.includes(name));
+    Logger.log('Missing sheets: ' + missing.join(', '));
+}
+
+function writeGroupMetaSheet(metaData) {
+    const sheetName = SHEET_NAMES.GROUP_LIST_META;
+    const headers = HEADERS[sheetName];
+    const sheet = getOrCreateSheet(sheetName, headers); // handles formatting
+
+    if (!Array.isArray(metaData) || metaData.length === 0) {
+        debugLog(`ℹ️ No metadata to write to ${sheetName}`);
+        return;
+    }
+
+    const rows = metaData.map(meta => [
+        meta.email,
+        meta.businessHash,
+        meta.fullHash,
+        meta.oldBusinessHash,
+        meta.oldFullHash,
+        meta.oldETag,
+        meta.newETag,
+        meta.lastModified
+    ]);
+
+    if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    }
+
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    debugLog(`✅ Wrote ${rows.length} rows to ${sheetName}`);
 }
