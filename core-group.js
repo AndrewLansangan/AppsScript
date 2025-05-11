@@ -203,16 +203,12 @@ function fetchGroupSettings(email, options = EXECUTION_MODE) {
 
         if (CHECK_BUSINESS_HASH) {
             businessUnchanged = businessHash === old.businessHash;
-            debugLog(`🔍 ${email} - businessHash: ${businessUnchanged ? 'same' : 'changed'}`);
-            debugLog(`     current=${businessHash}, previous=${old.businessHash || 'Not Found'}`);
         } else {
             debugLog(`⚠️ ${email} - businessHash comparison is DISABLED`);
         }
 
         if (CHECK_FULL_HASH) {
             fullUnchanged = fullHash === old.fullHash;
-            debugLog(`🔍 ${email} - fullHash: ${fullUnchanged ? 'same' : 'changed'}`);
-            debugLog(`     current=${fullHash}, previous=${old.fullHash || 'Not Found'}`);
         } else {
             debugLog(`⚠️ ${email} - fullHash comparison is DISABLED`);
         }
@@ -222,16 +218,7 @@ function fetchGroupSettings(email, options = EXECUTION_MODE) {
             (CHECK_FULL_HASH ? fullUnchanged : true);
 
         if (skip) {
-            let reason = '';
-            if (!CHECK_BUSINESS_HASH && !CHECK_FULL_HASH) {
-                reason = '⚠️ Skipping due to both hash checks being disabled.';
-            } else if (!CHECK_BUSINESS_HASH || !CHECK_FULL_HASH) {
-                reason = 'ℹ️ Skipping: enabled hash check(s) show no change.';
-            } else {
-                reason = '✅ Skipping: both hashes unchanged.';
-            }
 
-            debugLog(`🔁 Skipped ${email}. ${reason}`);
             return {
                 email,
                 settings: data,

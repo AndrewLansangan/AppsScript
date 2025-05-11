@@ -70,7 +70,7 @@ function testHashSystem() {
   modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
 
   const newHashMap = generateGroupSettingsHashMap(modifiedGroups);
-  logHashDifferences(newHashMap);
+  logHashDifferences(newHashMap, originalHashMap);
   const changedEmails = getGroupsWithHashChanges(newHashMap);
 
   debugLog("✅ Step 2: After modification");

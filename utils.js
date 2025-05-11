@@ -1,86 +1,31 @@
-// ===================================================
+// ===========================
 // 🔧 UTILS MODULE — General Helpers & Hashing Logic
-// ===================================================
+// ===========================
 
-// ===========================
-// 📦 Type Definitions
-// ===========================
-/**
- * @typedef {Object} NormalizedDirectoryGroup
- * @property {string} email
- * @property {string} name
- * @property {string} description
- * @property {number} directMembersCount
- * @property {boolean} adminCreated
- * @property {string} etag
- */
-
-// ===========================
-// 🔄 Array & String Utilities
-// ===========================
 function byteArrayToHex(bytes) {
     return bytes.map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
 }
-//TODO Delete this
-// function getEmailArray(groups) {
-//     return groups.map(group => group.email).filter(Boolean);
-// }
 
-// ===========================
-// 📐 Normalization
-// ===========================
-function normalizeDirectoryGroup(group) {
-    return {
-        email: group.email,
-        name: group.name,
-        description: group.description,
-        directMembersCount: group.directMembersCount || 0,
-        adminCreated: group.adminCreated || false,
-        etag: group.etag || 'Not Found'
-    };
-}
+function benchmark(label, fn, thresholdMs = 2000) {
+    const start = Date.now();
+    const result = fn();
+    const ms = Date.now() - start;
+    const seconds = (ms / 1000).toFixed(2);
 
-// ===========================
-// ⏱️ Benchmarking Utility
-// ===========================
-function benchmark(label, fn) {
-    const start = new Date();
-    try {
-        const result = fn();
-        const duration = ((new Date() - start) / 1000).toFixed(2);
-        infoLog(`⏱️ ${label} completed in ${duration}s`);
-        return { result, duration: parseFloat(duration) };
-    } catch (error) {
-        const duration = ((new Date() - start) / 1000).toFixed(2);
-        errorLog(`❌ ${label} failed after ${duration}s`, error.toString());
-        return { result: null, duration: parseFloat(duration), error: error.toString() };
+    debugLog(`⏱️ ${label} completed in ${seconds}s (${ms}ms)`);
+
+    if (ms > thresholdMs) {
+        warnSlowOperation(label, ms);
     }
+
+    return result;
 }
 
-// ===========================
-// 🔒 Group Directory Hashing
-// ===========================
-function hashGroupList(dataArray) {
-    const simplified = dataArray.map(group => ({
-        email: group.email,
-        name: group.name,
-        description: group.description,
-        directMembersCount: group.directMembersCount || 0,
-        adminCreated: group.adminCreated || false
-    }));
-
-    const sorted = simplified.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
-    const json = JSON.stringify(sorted);
-    return byteArrayToHex(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json));
+function warnSlowOperation(label, ms) {
+    const seconds = (ms / 1000).toFixed(2);
+    errorLog(`⚠️ Performance warning: "${label}" took ${seconds}s (${ms}ms)`);
 }
 
-function hasDataChanged(dataType, newData) {
-    return getStoredHash(dataType) !== hashGroupList(newData);
-}
-
-// ===========================
-// 🛡️ Settings API Hashing
-// ===========================
 function generateGroupSettingsHashPair(settings) {
     const keysToTrack = Object.keys(UPDATED_SETTINGS).sort();
     const businessData = {};
@@ -105,13 +50,14 @@ function generateGroupSettingsHashPair(settings) {
 function generateGroupSettingsHashMap(entries) {
     const hashMap = {};
     entries.forEach(({ email, settings }) => {
-        if (email && settings) hashMap[email] = generateGroupSettingsHashPair(settings);
+        if (email && settings) {
+            hashMap[email] = generateGroupSettingsHashPair(settings);
+        }
     });
     return hashMap;
 }
 
-function getGroupsWithHashChanges(newMap) {
-    const oldMap = loadGroupSettingsHashMap();
+function getGroupsWithHashChanges(newMap, oldMap = loadGroupSettingsHashMap()) {
     return Object.entries(newMap).reduce((changed, [email, newHashes]) => {
         const old = oldMap[email] || {};
         if (newHashes.businessHash !== old.businessHash || newHashes.fullHash !== old.fullHash) {
@@ -121,45 +67,24 @@ function getGroupsWithHashChanges(newMap) {
     }, []);
 }
 
-// ===========================
-// 💾 ScriptProperties Storage
-// ===========================
-function getStoredData(dataType) {
-    const raw = PropertiesService.getScriptProperties().getProperty(dataType);
-    return raw ? JSON.parse(raw) : null;
+function hashGroupList(dataArray) {
+    const simplified = dataArray.map(group => ({
+        email: group.email,
+        name: group.name,
+        description: group.description,
+        directMembersCount: group.directMembersCount || 0,
+        adminCreated: group.adminCreated || false
+    }));
+
+    const sorted = simplified.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+    const json = JSON.stringify(sorted);
+    return byteArrayToHex(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, json));
 }
 
-function getStoredHash(dataType) {
-    return PropertiesService.getScriptProperties().getProperty(`${dataType}_HASH`) || null;
+function hasDataChanged(dataType, newData) {
+    return getStoredHash(dataType) !== hashGroupList(newData);
 }
 
-function storeDataAndHash(dataType, newData) {
-    const json = JSON.stringify(newData);
-    const hash = hashGroupList(newData);
-    PropertiesService.getScriptProperties().setProperty(dataType, json);
-    PropertiesService.getScriptProperties().setProperty(`${dataType}_HASH`, hash);
-}
-
-function storeGroupSettingsHashMap(hashMap) {
-    PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(hashMap));
-}
-
-function loadGroupSettingsHashMap() {
-    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
-    return raw ? JSON.parse(raw) : {};
-}
-
-function cleanupLegacyHash(dataType) {
-    const raw = getStoredHash(dataType);
-    if (raw?.startsWith("[Ljava.lang.Object;")) {
-        PropertiesService.getScriptProperties().deleteProperty(`${dataType}_DATA_HASH`);
-        debugLog(`🪚 Removed invalid legacy hash for ${dataType}`);
-    }
-}
-
-// ===========================
-// 🌐 API Request Utilities
-// ===========================
 function buildAuthHeaders({ json = false, etag = null } = {}) {
     const headers = { Authorization: `Bearer ${getCachedAccessToken()}` };
     if (json) headers['Content-Type'] = 'application/json';
@@ -172,4 +97,15 @@ function fetchWithDefaults(url, options = {}) {
         muteHttpExceptions: true,
         ...options
     });
+}
+
+function normalizeDirectoryGroup(group) {
+    return {
+        email: group.email,
+        name: group.name,
+        description: group.description,
+        directMembersCount: group.directMembersCount || 0,
+        adminCreated: group.adminCreated || false,
+        etag: group.etag || 'Not Found'
+    };
 }

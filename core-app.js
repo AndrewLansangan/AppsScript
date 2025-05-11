@@ -5,8 +5,11 @@
 function listGroups(bypassETag = false) {
     return benchmark("listGroups", () => {
         try {
-            const executionOptions = { ...EXECUTION_MODE, bypassETag };
-            const { normalizedData, metaData } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
+            const executionOptions = {...EXECUTION_MODE, bypassETag};
+            const {
+                normalizedData,
+                metaData
+            } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
 
             if (!Array.isArray(normalizedData) || normalizedData.length === 0) {
                 debugLog("No valid group data retrieved.");
@@ -34,14 +37,16 @@ function listGroups(bypassETag = false) {
                 };
             });
             storeDirectoryGroupHashMap(perGroupHashMap);
-            logHashDifferences(perGroupHashMap);
+            const oldHashMap = loadDirectoryGroupHashMap();
+            logHashDifferences(perGroupHashMap, oldHashMap);
+
 
             // 🕒 Record last sync timestamp
             PropertiesService.getScriptProperties().setProperty("LAST_GROUP_SYNC", new Date().toISOString());
 
             // 📝 Log activity to sheet
             const summaryHash = hashGroupList(normalizedData);
-            logEventToSheet("GroupList", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups`);
+            logEventToSheet("GroupListLog", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups ${Object.keys(perGroupHashMap).length}`);
 
             debugLog(changed
                 ? `✅ Group list changed — data written and logged.`
@@ -53,7 +58,7 @@ function listGroups(bypassETag = false) {
             errorLog("❌ Error in listGroups", err.toString());
             return [];
         }
-    });
+    }, 2000);
 }
 
 /**
@@ -61,7 +66,7 @@ function listGroups(bypassETag = false) {
  //
  // writeDetailReport(detailRows)
  //
- // writeDiscrepancyLog(violations)
+ // writeDiscrepancySheet(violations)
  //
  // writeSummaryReport(rowMap, violationKeyMap)
  */
@@ -73,7 +78,7 @@ function listGroupSettings(options = EXECUTION_MODE) {
 
         if (!Array.isArray(groupEmails) || groupEmails.length === 0) {
             errorLog("❌ No group emails resolved — skipping group settings check.");
-            getOrCreateSheet(SHEET_NAMES.DISCREPANCIES, HEADERS[SHEET_NAMES.DISCREPANCIES]);
+            getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, HEADERS[SHEET_NAMES.DETAIL_REPORT]);
             return [];
         }
 
@@ -91,21 +96,13 @@ function listGroupSettings(options = EXECUTION_MODE) {
         const previousHashMap = loadGroupSettingsHashMap();               // ✅ load before overwrite
         const newHashMap = generateGroupSettingsHashMap(validForHashing);
 
-        logHashDifferences(newHashMap, previousHashMap);                  // ✅ compare against *real* previous
+        logHashDifferences(newHashMap, previousHashMap);
+        const changedGroupCount = getGroupsWithHashChanges(newHashMap).length;
+        logEventToSheet("GroupSettingsLog", "GroupSettings", "Hash Comparison", "", `${changedGroupCount} group(s) with changed hashes`);
+// ✅ compare against *real* previous
         storeGroupSettingsHashMap(newHashMap);                            // ✅ then store new
 
         debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
-
-        if (validForHashing.length > 0 && !options.dryRun) {
-            try {
-                saveToSheet(newHashMap);
-            } catch (e) {
-                debugLog("❌ Saving hash map in chunks due to size limits.");
-                saveToSheetInChunks(newHashMap);
-            }
-        } else {
-            debugLog("ℹ️ Hash map unchanged or dryRun enabled. Skipping sheet save.");
-        }
 
         const violations = filterGroupSettings(entriesWithSettings);
         if (violations.length === 0) {
@@ -114,11 +111,8 @@ function listGroupSettings(options = EXECUTION_MODE) {
         }
 
         if (!options.dryRun) {
-            const detailRows = generateDiscrepancyRows(violations);
             const violationKeyMap = generateViolationKeyMap(violations);
-
-            const rowMap = writeDetailReport(detailRows);
-            writeDiscrepancyLog(violations);
+            const rowMap = writeDetailReport(violations);
             writeSummaryReport(rowMap, violationKeyMap);
         }
 
@@ -126,7 +120,7 @@ function listGroupSettings(options = EXECUTION_MODE) {
         if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
 
         return all;
-    });
+    }, 2000);
 }
 
 function updateGroupSettings() {
@@ -182,19 +176,21 @@ function updateGroupSettings() {
 }
 
 function getDiscrepancyRowsFromSheet() {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DISCREPANCIES);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
     if (!sheet) {
-        errorLog("❌ DISCREPANCIES sheet not found.");
+        errorLog("❌ DETAIL REPORT sheet not found.");
         return [];
     }
 
     const rows = sheet.getDataRange().getValues().slice(1); // skip headers
+
     return rows.map(([email, key, expected]) => ({
         email,
         key,
         expected,
     })).filter(row => row.email && row.key && row.expected !== undefined);
 }
+
 
 function getChangedKeys(oldSettings, newSettings) {
     const keysToTrack = Object.keys(UPDATED_SETTINGS);

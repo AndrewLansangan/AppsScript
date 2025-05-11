@@ -12,10 +12,10 @@ const EXECUTION_MODE = {
 const SHEET_NAMES = {
   DETAIL_REPORT: 'DETAIL REPORT',
   SUMMARY_REPORT: 'SUMMARY REPORT',
-  DISCREPANCIES: 'DISCREPANCIES',
   GROUP_LIST: 'GROUP LIST',               // former "Group Hashes"
   GROUP_LIST_META: 'GROUP METADATA',      // former "Group Emails"
-  ACTIVITY: 'ACTIVITY LOG'
+  ACTIVITY: 'ACTIVITY LOG',
+  RUNTIME: 'RuntimeLog'
 };
 
 const GROUP_DIRECTORY_HEADERS = {
@@ -25,9 +25,8 @@ const GROUP_DIRECTORY_HEADERS = {
 
 // Group Settings (Settings API)
 const GROUP_SETTINGS_HEADERS = {
-  [SHEET_NAMES.DETAIL_REPORT]: ['Email', 'Expected', 'Actual', 'Hash', 'Last Modified'],
-  [SHEET_NAMES.SUMMARY_REPORT]: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
-  [SHEET_NAMES.DISCREPANCIES]: ['Email', 'Key', 'Expected', 'Actual', 'Last Modified']
+  [SHEET_NAMES.DETAIL_REPORT]: ['Email', 'Key', 'Expected', 'Actual', 'Hash', 'Last Modified'],
+  [SHEET_NAMES.SUMMARY_REPORT]: ['Email', '# Violations', 'Violated Keys', 'Last Modified']
 };
 
 const SYSTEM_HEADERS = {
@@ -39,7 +38,13 @@ const SYSTEM_HEADERS = {
     'Action',
     'ETag / Ref',
     'Details'
-  ]
+  ],
+      [SHEET_NAMES.RUNTIME]: [
+  'Timestamp',
+  'Level',
+  'Message',
+  'Data'
+]
 };
 const HEADERS = {
   ...GROUP_DIRECTORY_HEADERS,
@@ -65,11 +70,6 @@ const FORMATTING_CONFIG = {
     wrap: []
   },
   [SHEET_NAMES.DETAIL_REPORT]: {
-    hide: ['Hash', 'Last Modified'],
-    resize: ['Email'],
-    wrap: ['Expected', 'Actual']
-  },
-  [SHEET_NAMES.DISCREPANCIES]: {
     hide: [],
     resize: ['Email'],
     wrap: ['Expected', 'Actual']
@@ -100,9 +100,6 @@ const UPDATED_SETTINGS = {
   "whoCanContactOwner": "ANYONE_CAN_CONTACT",
   "whoCanViewConversations": "ALL_IN_DOMAIN_CAN_VIEW"
 };
-
-//NOTE Is this still necessary?
-const GROUP_SETTINGS_KEYS = Object.keys(UPDATED_SETTINGS);
 
 // ===========================
 // ⚙️ Toggle Flags

@@ -12,10 +12,8 @@ const GROUPS_SETTINGS_API_BASE_URL = 'https://www.googleapis.com/groups/v1/group
 let cachedScriptProperties = null;
 function getScriptProperties() {
   if (cachedScriptProperties !== null) return cachedScriptProperties;
-  debugLog("Fetching Script Properties");
-  const properties = PropertiesService.getScriptProperties().getProperties();
-  cachedScriptProperties = properties;
-  return properties;
+  cachedScriptProperties = PropertiesService.getScriptProperties().getProperties();
+  return cachedScriptProperties;
 }
 
 function getClientId() {

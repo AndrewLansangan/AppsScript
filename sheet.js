@@ -129,27 +129,45 @@ function writeGroupListToSheet(groupData) {
     if (rows.length) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
 
-function writeDetailReport(detailRows) {
+function writeDetailReport(violations) {
     const headers = HEADERS[SHEET_NAMES.DETAIL_REPORT];
     const sheet = getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, headers);
-    if (!doHeadersMatch(sheet, headers)) return {};
-    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    if (!detailRows?.length) return {};
-    sheet.getRange(2, 1, detailRows.length, headers.length).setValues(detailRows);
+
+    if (!Array.isArray(violations) || violations.length === 0) {
+        debugLog("⚠️ No discrepancies to write.");
+        return {};
+    }
+
+    if (!doHeadersMatch(sheet, headers)) {
+        errorLog("❌ Header mismatch in Detail Report sheet.");
+        return {};
+    }
+
+    if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    }
+
+    const now = new Date().toISOString();
+    const rows = violations.map(v => [
+        v.email,
+        v.key,
+        v.expected,
+        v.actual ?? 'Not Found',
+        v.hash ?? 'Not Found',
+        now
+    ]);
+
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    debugLog(`✅ Wrote ${rows.length} rows to Detail Report`);
+
     const rowMap = {};
-    detailRows.forEach(([email]) => rowMap[email] = (rowMap[email] || 0) + 1);
+    violations.forEach(v => {
+        rowMap[v.email] = (rowMap[v.email] || 0) + 1;
+    });
+
     return rowMap;
 }
 
-function writeDiscrepancyLog(violations) {
-    const headers = HEADERS[SHEET_NAMES.DISCREPANCIES];
-    const sheet = getOrCreateSheet(SHEET_NAMES.DISCREPANCIES, headers);
-    if (!doHeadersMatch(sheet, headers)) return;
-    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    if (!violations?.length) return;
-    const rows = violations.map(v => [v.email, v.key, v.expected, v.actual, new Date().toISOString()]);
-    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-}
 
 function writeSummaryReport(rowMap, keyMap) {
     const headers = HEADERS[SHEET_NAMES.SUMMARY_REPORT];
@@ -171,6 +189,17 @@ function writeSummaryReport(rowMap, keyMap) {
 // ===========================
 // 🧪 UTILITIES
 // ===========================
+
+function generateViolationKeyMap(violations) {
+    const map = {};
+    violations.forEach(({ email, key }) => {
+        if (!map[email]) map[email] = [];
+        if (!map[email].includes(key)) {
+            map[email].push(key);
+        }
+    });
+    return map;
+}
 
 function resolveGroupEmails() {
     const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
@@ -238,4 +267,44 @@ function writeGroupMetaSheet(metaData) {
 
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     debugLog(`✅ Wrote ${rows.length} rows to ${sheetName}`);
+}
+
+function archiveRuntimeLogDaily() {
+    const sheetName = SHEET_NAMES.RUNTIME;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+        Logger.log(`⚠️ No sheet named "${sheetName}" found.`);
+        return;
+    }
+
+    const lastRow = sheet.getLastRow();
+    const headers = SYSTEM_HEADERS[sheetName];
+    if (lastRow <= 1) {
+        Logger.log(`ℹ️ "${sheetName}" is already empty or has only headers.`);
+        return;
+    }
+
+    // Build archive name
+    const today = new Date().toISOString().slice(0, 10); // e.g. 2025-05-10
+    const archiveName = `${sheetName}_${today}`;
+
+    // Create archive sheet
+    let archiveSheet = ss.getSheetByName(archiveName);
+    if (archiveSheet) {
+        Logger.log(`⚠️ Archive sheet "${archiveName}" already exists. Skipping.`);
+        return;
+    }
+    archiveSheet = ss.insertSheet(archiveName);
+    archiveSheet.appendRow(headers);
+
+    // Copy all data rows
+    const data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    archiveSheet.getRange(2, 1, data.length, headers.length).setValues(data);
+
+    // Clear original sheet rows but keep headers
+    sheet.getRange(2, 1, lastRow - 1, headers.length).clearContent();
+
+    Logger.log(`✅ Archived ${data.length} rows from "${sheetName}" to "${archiveName}"`);
 }
