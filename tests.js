@@ -104,3 +104,32 @@ function testWriteAllSheets() {
   writeGroupListToSheet([{ email: 'example@domain.com', name: 'Test Group', description: 'For testing', directMembersCount: 5, adminCreated: true }]);
   recordDomainETagChange('grey-box.ca', 'etag-old', 'etag-new');
 }
+
+function simulateUpdateGroupSettings() {
+  const violations = getDiscrepancyRowsFromSheet();
+  if (!violations || violations.length === 0) {
+    debugLog("✅ No discrepancies found — nothing to simulate.");
+    return [];
+  }
+
+  const updates = {};
+  violations.forEach(({ email, key, expected }) => {
+    if (!updates[email]) updates[email] = {};
+    updates[email][key] = expected;
+  });
+
+  const results = [];
+
+  Object.entries(updates).forEach(([email, updatePayload], i) => {
+    debugLog(`🧪 [${i + 1}] Simulated update for ${email}:\n${JSON.stringify(updatePayload, null, 2)}`);
+    results.push({
+      email,
+      success: true,
+      simulated: true,
+      keys: Object.keys(updatePayload)
+    });
+  });
+
+  debugLog(`✅ Simulated ${results.length} group setting updates.`);
+  return results;
+}

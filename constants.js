@@ -15,7 +15,8 @@ const SHEET_NAMES = {
   GROUP_LIST: 'GROUP LIST',               // former "Group Hashes"
   GROUP_LIST_META: 'GROUP METADATA',      // former "Group Emails"
   ACTIVITY: 'ACTIVITY LOG',
-  RUNTIME: 'RuntimeLog'
+  RUNTIME: 'RUNTIME LOG',
+  SETTINGS_UPDATE_LOG: 'SETTINGS UPDATE LOG'
 };
 
 const GROUP_DIRECTORY_HEADERS = {
@@ -44,7 +45,8 @@ const SYSTEM_HEADERS = {
   'Level',
   'Message',
   'Data'
-]
+],
+  [SHEET_NAMES.SETTINGS_UPDATE_LOG]: ['Timestamp', 'Email', 'Status', 'Success', 'Updated Keys', 'Error']
 };
 const HEADERS = {
   ...GROUP_DIRECTORY_HEADERS,
@@ -70,9 +72,9 @@ const FORMATTING_CONFIG = {
     wrap: []
   },
   [SHEET_NAMES.DETAIL_REPORT]: {
-    hide: [],
-    resize: ['Email'],
-    wrap: ['Expected', 'Actual']
+    hide: ['Hash', 'Last Modified'],
+    resize: ['Email', 'Expected', 'Actual', 'key'],
+    wrap: []
   },
   [SHEET_NAMES.SUMMARY_REPORT]: {
     hide: [],
@@ -83,8 +85,13 @@ const FORMATTING_CONFIG = {
     hide: [],
     resize: ['Timestamp', 'Source', 'Entity Type', 'Email / ID', 'Action'],
     wrap: ['Details']
-  }
-};
+  },
+  [SHEET_NAMES.SETTINGS_UPDATE_LOG]: {
+    hide: [],
+    resize: ['Email', 'Status', 'Success', 'Updated Keys'],
+    wrap: ['Error']
+  },
+}
 
 // ===========================
 // 🔒 Security / Compliance Expectations

@@ -2,14 +2,12 @@
 // 🌐 App Entry Point and Workflows
 // ===========================
 
-function listGroups(bypassETag = false) {
+function listGroups(options = {}) {
+    const executionOptions = resolveExecutionOptions(options);
+
     return benchmark("listGroups", () => {
         try {
-            const executionOptions = {...EXECUTION_MODE, bypassETag};
-            const {
-                normalizedData,
-                metaData
-            } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
+            const { normalizedData, metaData } = fetchAllGroupData(getWorkspaceDomain(), executionOptions);
 
             if (!Array.isArray(normalizedData) || normalizedData.length === 0) {
                 debugLog("No valid group data retrieved.");
@@ -18,17 +16,48 @@ function listGroups(bypassETag = false) {
 
             debugLog(`Fetched ${normalizedData.length} groups.`);
 
-            // ✅ Write normalized business data to GROUP_LIST
+            const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
+// 🔄 Always update GROUP_EMAILS cache if data is valid
+            saveGroupEmails(normalizedData);
+            if (!changed && metaData.length === 0 && !executionOptions.manual) {
+                debugLog("✅ No changes detected and ETag matched — skipping write.");
+                return normalizedData;
+            }
+
+            // ✅ Proceed to write if changed or forced
             writeGroupListToSheet(normalizedData);
 
-            // ✅ Write technical metadata to GROUP_LIST_META
-            writeGroupMetaSheet(metaData); // ⬅️ your new abstraction
+            if (metaData.length > 0) {
+                writeGroupMetaSheet(metaData);
+            } else {
+                // 🛟 Fallback to previously stored hash map
+                debugLog(`ℹ️ No metadata returned from fetch — falling back to stored ScriptProperties`);
 
-            // 🔁 Detect changes and store normalized data hash
-            const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
+                const fallbackMap = loadDirectoryGroupHashMap();
+                const groupEmails = loadGroupEmails();
+
+                const fallbackRows = groupEmails.map(group => {
+                    const email = typeof group === 'string' ? group : group.email;
+                    const { businessHash = '', fullHash = '' } = fallbackMap[email] || {};
+                    return {
+                        email,
+                        businessHash,
+                        fullHash,
+                        oldBusinessHash: '',     // optional
+                        oldFullHash: '',         // optional
+                        oldETag: '',             // optional
+                        newETag: '',             // optional
+                        lastModified: ''         // unknown
+                    };
+                });
+
+                writeGroupMetaSheet(fallbackRows);
+                debugLog(`✅ Wrote fallback metadata for ${fallbackRows.length} groups`);
+            }
+
+            // 💾 Hash tracking
             storeDataAndHash("GROUP_NORMALIZED_DATA", normalizedData);
 
-            // 🧠 Store per-group hashes for auditing
             const perGroupHashMap = {};
             metaData.forEach(meta => {
                 perGroupHashMap[meta.email] = {
@@ -36,21 +65,19 @@ function listGroups(bypassETag = false) {
                     fullHash: meta.fullHash
                 };
             });
-            storeDirectoryGroupHashMap(perGroupHashMap);
+
             const oldHashMap = loadDirectoryGroupHashMap();
             logHashDifferences(perGroupHashMap, oldHashMap);
+            storeDirectoryGroupHashMap(perGroupHashMap);
 
-
-            // 🕒 Record last sync timestamp
+            // 🕒 Timestamp + Logging
             PropertiesService.getScriptProperties().setProperty("LAST_GROUP_SYNC", new Date().toISOString());
-
-            // 📝 Log activity to sheet
             const summaryHash = hashGroupList(normalizedData);
-            logEventToSheet("GroupListLog", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups ${Object.keys(perGroupHashMap).length}`);
+            logEventToSheet("GroupListLog", "all groups", changed ? "Fetched & Updated" : "No Change", summaryHash, `Fetched ${normalizedData.length} groups (${Object.keys(perGroupHashMap).length} hashes)`);
 
             debugLog(changed
                 ? `✅ Group list changed — data written and logged.`
-                : `✅ No change in group list — data still written.`);
+                : `✅ No change in group list — metadata re-evaluated.`);
 
             return normalizedData;
 
@@ -71,8 +98,10 @@ function listGroups(bypassETag = false) {
  // writeSummaryReport(rowMap, violationKeyMap)
  */
 
-function listGroupSettings(options = EXECUTION_MODE) {
-    const {bypassETag = true, bypassHash = true, manual = true, dryRun = true} = options
+function listGroupSettings(options = {}) {
+    const executionOptions = resolveExecutionOptions(options);
+    debugLog(`🔧 listGroupSettings options:\n` + JSON.stringify(executionOptions, null, 2));
+
     return benchmark("listGroupSettings", () => {
         const groupEmails = resolveGroupEmails();
 
@@ -82,27 +111,32 @@ function listGroupSettings(options = EXECUTION_MODE) {
             return [];
         }
 
-        const {changed, all, errored} = fetchAllGroupSettings(groupEmails, options);
+        const { changed, all, errored } = fetchAllGroupSettings(groupEmails, executionOptions);
         if (!Array.isArray(all) || all.length === 0) {
             errorLog("❌ No group settings fetched.");
             return [];
         }
 
         const entriesWithSettings = all.filter(r => r.settings);
-        debugLog(`✅ Groups with settings: ${entriesWithSettings.length}`);
-
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
+        debugLog(`✅ Groups with usable settings: ${validForHashing.length}`);
 
-        const previousHashMap = loadGroupSettingsHashMap();               // ✅ load before overwrite
+        const previousHashMap = loadGroupSettingsHashMap();
         const newHashMap = generateGroupSettingsHashMap(validForHashing);
 
+        // 🔍 Compare and log hash differences
         logHashDifferences(newHashMap, previousHashMap);
         const changedGroupCount = getGroupsWithHashChanges(newHashMap).length;
         logEventToSheet("GroupSettingsLog", "GroupSettings", "Hash Comparison", "", `${changedGroupCount} group(s) with changed hashes`);
-// ✅ compare against *real* previous
-        storeGroupSettingsHashMap(newHashMap);                            // ✅ then store new
 
-        debugLog(`✅ Valid entries for hashing: ${validForHashing.length}`);
+        if (changedGroupCount === 0 && !executionOptions.manual && !executionOptions.dryRun) {
+            debugLog("✅ No setting changes detected — skipping writes.");
+            return all;
+        }
+
+        // 💾 Store new setting hashes
+        storeGroupSettingsHashMap(newHashMap);
+        debugLog(`📊 Final setting hash map saved for ${Object.keys(newHashMap).length} group(s).`);
 
         const violations = filterGroupSettings(entriesWithSettings);
         if (violations.length === 0) {
@@ -110,7 +144,7 @@ function listGroupSettings(options = EXECUTION_MODE) {
             return all;
         }
 
-        if (!options.dryRun) {
+        if (!executionOptions.dryRun) {
             const violationKeyMap = generateViolationKeyMap(violations);
             const rowMap = writeDetailReport(violations);
             writeSummaryReport(rowMap, violationKeyMap);
@@ -124,20 +158,36 @@ function listGroupSettings(options = EXECUTION_MODE) {
 }
 
 function updateGroupSettings() {
-    const violations = getDiscrepancyRowsFromSheet(); // step 1
-    const updates = [];
+    const violations = getDiscrepancyRowsFromSheet();
+    if (!violations || violations.length === 0) {
+        debugLog("✅ No discrepancies found — nothing to update.");
+        return [];
+    }
 
-    violations.forEach(({email, key, expected}) => {
+    // Build update payload by email
+    const updates = {};
+    violations.forEach(({ email, key, expected }) => {
         if (!email || !key || expected === undefined) return;
-
         if (!updates[email]) updates[email] = {};
         updates[email][key] = expected;
     });
 
+    // Confirm before applying updates
+    const ui = SpreadsheetApp.getUi();
+    const confirmText = `You are about to apply ${violations.length} key-level updates across ${Object.keys(updates).length} group(s).\n\nProceed with the changes?`;
+    const response = ui.alert("⚠️ Confirm Settings Update", confirmText, ui.ButtonSet.YES_NO);
+    if (response !== ui.Button.YES) {
+        debugLog("❌ Settings update cancelled by user.");
+        return [];
+    }
+
+    // Apply PATCH updates
     const results = [];
 
-    Object.entries(updates).forEach(([email, updatePayload]) => {
+    Object.entries(updates).forEach(([email, updatePayload], i) => {
         try {
+            debugLog(`🚀 [${i + 1}/${Object.keys(updates).length}] Updating ${email}`);
+
             const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodeURIComponent(email)}`;
             const response = UrlFetchApp.fetch(url, {
                 method: 'PATCH',
@@ -151,11 +201,12 @@ function updateGroupSettings() {
 
             const status = response.getResponseCode();
             const responseBody = response.getContentText();
+
             if (status >= 200 && status < 300) {
-                debugLog(`✅ Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
-                results.push({email, status, keys: Object.keys(updatePayload), success: true});
+                debugLog(`✅ [${i + 1}] Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
+                results.push({ email, status, keys: Object.keys(updatePayload), success: true });
             } else {
-                errorLog(`❌ Failed to update ${email}: ${responseBody}`);
+                errorLog(`❌ [${i + 1}] Failed to update ${email}: ${responseBody}`);
                 results.push({
                     email,
                     status,
@@ -166,12 +217,13 @@ function updateGroupSettings() {
             }
 
         } catch (err) {
-            errorLog(`❌ Exception while updating ${email}`, err.toString());
-            results.push({email, success: false, error: err.toString()});
+            errorLog(`❌ [${i + 1}] Exception while updating ${email}`, err.toString());
+            results.push({ email, success: false, error: err.toString() });
         }
     });
 
-    // Optional: write `results` to a new sheet or archive failures
+    // Log to SETTINGS UPDATE LOG sheet
+    logUpdateResults(results);
     return results;
 }
 
@@ -189,10 +241,4 @@ function getDiscrepancyRowsFromSheet() {
         key,
         expected,
     })).filter(row => row.email && row.key && row.expected !== undefined);
-}
-
-
-function getChangedKeys(oldSettings, newSettings) {
-    const keysToTrack = Object.keys(UPDATED_SETTINGS);
-    return keysToTrack.filter(key => (oldSettings[key] ?? null) !== (newSettings[key] ?? null));
 }

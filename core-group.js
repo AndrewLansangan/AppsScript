@@ -156,11 +156,11 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
 }
 
 function fetchGroupSettings(email, options = EXECUTION_MODE) {
-    const {manual} = options
+    const { manual = false, bypassHash = false } = options || {};
 
     if (manual) {
         debugLog(`⚙️ Manual mode enabled — skipping fetch for ${email}`);
-        return { email, manual: true };
+        return { email, manual: manual };
     }
 
     const encodedEmail = encodeURIComponent(email);
@@ -257,9 +257,9 @@ function fetchGroupSettings(email, options = EXECUTION_MODE) {
  */
 function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
     const {
-        bypassETag = false,
-        bypassHas =    false,
-        manual = false,
+        bypassETag = true,
+        bypassHash =    true,
+        manual = true,
         dryRun = false } = options;
     if (!Array.isArray(emails) || emails.length === 0) {
         return { all: [], changed: [], unchanged: [], errored: [] };
@@ -296,30 +296,6 @@ function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
 // ===========================
 // 🔍 Data Layer
 // ===========================
-
-/**
- * Returns filtered group data based on optional whitelist and blacklist terms.
- *
- * @param {Array<Object>} groupData - Array of group objects to filter.
- * @param {string[]} [whitelist=[]] - Optional terms to include (case-insensitive).
- * @param {string[]} [blacklist=[]] - Optional terms to exclude (case-insensitive).
- * @returns {Array<Object>} Filtered group objects.
- */
-function filterGroups(groupData, whitelist = [], blacklist = []) {
-    return groupData.filter(group => {
-        const target = `${group.email || ''} ${group.name || ''}`.toLowerCase();
-
-        const isBlacklisted = blacklist.some(term =>
-            target.includes(term.toLowerCase())
-        );
-
-        const isWhitelisted = whitelist.length === 0 || whitelist.some(term =>
-            target.includes(term.toLowerCase())
-        );
-
-        return !isBlacklisted && isWhitelisted;
-    });
-}
 
 /**
  * Compares group settings against UPDATED_SETTINGS and returns discrepancies.

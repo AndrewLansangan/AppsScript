@@ -109,3 +109,35 @@ function normalizeDirectoryGroup(group) {
         etag: group.etag || 'Not Found'
     };
 }
+
+function resolveExecutionOptions(overrides = {}) {
+    return {
+        bypassETag: overrides.bypassETag ?? EXECUTION_MODE.bypassETag,
+        bypassHash: overrides.bypassHash ?? EXECUTION_MODE.bypassHash,
+        manual: overrides.manual ?? EXECUTION_MODE.manual,
+        dryRun: overrides.dryRun ?? EXECUTION_MODE.dryRun
+    };
+}
+/**
+ * Returns filtered group data based on optional whitelist and blacklist terms.
+ *
+ * @param {Array<Object>} groupData - Array of group objects to filter.
+ * @param {string[]} [whitelist=[]] - Optional terms to include (case-insensitive).
+ * @param {string[]} [blacklist=[]] - Optional terms to exclude (case-insensitive).
+ * @returns {Array<Object>} Filtered group objects.
+ */
+function filterGroups(groupData, whitelist = [], blacklist = []) {
+    return groupData.filter(group => {
+        const target = `${group.email || ''} ${group.name || ''}`.toLowerCase();
+
+        const isBlacklisted = blacklist.some(term =>
+            target.includes(term.toLowerCase())
+        );
+
+        const isWhitelisted = whitelist.length === 0 || whitelist.some(term =>
+            target.includes(term.toLowerCase())
+        );
+
+        return !isBlacklisted && isWhitelisted;
+    });
+}

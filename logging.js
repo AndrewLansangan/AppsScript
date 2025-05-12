@@ -98,17 +98,34 @@ function alwaysLog(message, data = null) {
 }
 
 // ========== 🧪 Specialized Event Logging ==========
-function logEventToSheet(sheetName, category, action, hash, message) {
-  const headers = ['Timestamp', 'Category', 'Action', 'Hash', 'Details'];
-  const sheet = getOrCreateSheet(sheetName || 'Events', headers);
+function logEventToSheet(sheetName, category, action, hash = '', message = '') {
+  const timestamp = new Date().toISOString();
 
-  const actualHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  const missing = actualHeaders.some((cell, i) => cell !== headers[i]);
-  if (missing) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  // 1️⃣ Log to requested target sheet (GroupListLog, GroupSettingsLog, etc.)
+  const simpleHeaders = ['Timestamp', 'Category', 'Action', 'Hash', 'Details'];
+  const targetSheet = getOrCreateSheet(sheetName, simpleHeaders);
+  const firstRow = targetSheet.getRange(1, 1, 1, simpleHeaders.length).getValues()[0];
+  const missingHeaders = firstRow.some((cell, i) => cell !== simpleHeaders[i]);
+  if (missingHeaders) {
+    targetSheet.getRange(1, 1, 1, simpleHeaders.length).setValues([simpleHeaders]);
   }
+  targetSheet.appendRow([timestamp, category, action, hash, message]);
 
-  sheet.appendRow([new Date().toISOString(), category, action, hash, message]);
+  // 2️⃣ Also log to ACTIVITY LOG
+  const activityHeaders = HEADERS[SHEET_NAMES.ACTIVITY];
+  const activitySheet = getOrCreateSheet(SHEET_NAMES.ACTIVITY, activityHeaders);
+  const activityRow = [
+    timestamp,
+    category,         // Source
+    'Group',          // Entity Type — fixed here, or you can make it dynamic
+    '',               // Email / ID — optional
+    action,
+    hash,
+    message
+  ];
+  activitySheet.appendRow(activityRow);
+
+  debugLog(`📝 Logged to ${sheetName} and mirrored in ACTIVITY LOG`);
 }
 
 function logGroupDirectoryEvent(target, action, hash = '', notes = '') {

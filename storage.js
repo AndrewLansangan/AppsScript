@@ -88,7 +88,12 @@ function clearGroupProperties() {
         'WHITELIST_REGEX',
         'WHITELIST_STRINGS',
         'GROUP_EMAILS',
-        'GROUP_TAGS'
+        'GROUP_TAGS',
+        'GROUP_NORMALIZED_DATA',
+        'GROUP_NORMALIZED_DATA_HASH',
+        'GROUP_SETTINGS_HASH_MAP',
+        'LAST_GROUP_SYNC,' +
+        'GROUP_HASH_MAP'
     ];
     const props = PropertiesService.getScriptProperties();
     keysToDelete.forEach(key => {
@@ -97,4 +102,33 @@ function clearGroupProperties() {
     });
 
     debugLog('🧼 Cleared group-related ScriptProperties.');
+}
+
+function saveGroupEmails(groupData) {
+    if (!Array.isArray(groupData)) {
+        throw new Error("❌ saveGroupEmails expected an array.");
+    }
+
+    const formatted = groupData.map(g => {
+        if (typeof g === 'string') return { email: g };
+        if (typeof g === 'object' && g.email) return { email: g.email };
+        return null;
+    }).filter(Boolean);
+
+    PropertiesService.getScriptProperties().setProperty("GROUP_EMAILS", JSON.stringify(formatted));
+    debugLog(`💾 Saved ${formatted.length} group emails into ScriptProperties.`);
+}
+
+function loadGroupEmails() {
+    const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed)
+            ? parsed.map(e => (typeof e === 'string' ? { email: e } : e)).filter(e => e.email)
+            : [];
+    } catch (e) {
+        errorLog("❌ Failed to parse GROUP_EMAILS", e.toString());
+        return [];
+    }
 }
