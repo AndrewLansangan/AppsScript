@@ -2,7 +2,7 @@
 // 🌐 App Entry Point and Workflows
 // ===========================
 
-function listGroups(options = {}) {
+function listGroups(options) {
     const executionOptions = resolveExecutionOptions(options);
 
     return benchmark("listGroups", () => {
@@ -17,7 +17,7 @@ function listGroups(options = {}) {
             debugLog(`Fetched ${normalizedData.length} groups.`);
 
             const changed = hasDataChanged("GROUP_NORMALIZED_DATA", normalizedData);
-// 🔄 Always update GROUP_EMAILS cache if data is valid
+        // 🔄 Always update GROUP_EMAILS cache if data is valid
             saveGroupEmails(normalizedData);
             if (!changed && metaData.length === 0 && !executionOptions.manual) {
                 debugLog("✅ No changes detected and ETag matched — skipping write.");
@@ -88,22 +88,14 @@ function listGroups(options = {}) {
     }, 2000);
 }
 
-/**
- // FIXME Missing or failing calls to these in listGroupSettings():
- //
- // writeDetailReport(detailRows)
- //
- // writeDiscrepancySheet(violations)
- //
- // writeSummaryReport(rowMap, violationKeyMap)
- */
-
-function listGroupSettings(options = {}) {
+function listGroupSettings(options) {
     const executionOptions = resolveExecutionOptions(options);
     debugLog(`🔧 listGroupSettings options:\n` + JSON.stringify(executionOptions, null, 2));
 
     return benchmark("listGroupSettings", () => {
         const groupEmails = resolveGroupEmails();
+        debugLog(`📧 Resolved group emails: ${groupEmails.length}`);
+        debugLog(JSON.stringify(groupEmails, null, 2));
 
         if (!Array.isArray(groupEmails) || groupEmails.length === 0) {
             errorLog("❌ No group emails resolved — skipping group settings check.");
@@ -112,43 +104,55 @@ function listGroupSettings(options = {}) {
         }
 
         const { changed, all, errored } = fetchAllGroupSettings(groupEmails, executionOptions);
+        debugLog(`📦 fetchAllGroupSettings → total: ${all.length}, changed: ${changed.length}, errored: ${errored.length}`);
+
         if (!Array.isArray(all) || all.length === 0) {
             errorLog("❌ No group settings fetched.");
             return [];
         }
 
         const entriesWithSettings = all.filter(r => r.settings);
+        debugLog(`✅ entriesWithSettings: ${entriesWithSettings.length}`);
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
-        debugLog(`✅ Groups with usable settings: ${validForHashing.length}`);
+        debugLog(`✅ Groups with usable settings (validForHashing): ${validForHashing.length}`);
 
         const previousHashMap = loadGroupSettingsHashMap();
         const newHashMap = generateGroupSettingsHashMap(validForHashing);
 
-        // 🔍 Compare and log hash differences
         logHashDifferences(newHashMap, previousHashMap);
+
         const changedGroupCount = getGroupsWithHashChanges(newHashMap).length;
+        debugLog(`🔁 Changed group count (by hash): ${changedGroupCount}`);
         logEventToSheet("GroupSettingsLog", "GroupSettings", "Hash Comparison", "", `${changedGroupCount} group(s) with changed hashes`);
 
         if (changedGroupCount === 0 && !executionOptions.manual && !executionOptions.dryRun) {
-            debugLog("✅ No setting changes detected — skipping writes.");
-            return all;
+            debugLog("ℹ️ No hash changes detected — continuing to check for setting violations anyway.");
         }
 
-        // 💾 Store new setting hashes
-        storeGroupSettingsHashMap(newHashMap);
-        debugLog(`📊 Final setting hash map saved for ${Object.keys(newHashMap).length} group(s).`);
 
-        const violations = filterGroupSettings(entriesWithSettings);
+        storeGroupSettingsHashMap(newHashMap);
+        debugLog(`📊 Stored new hash map for ${Object.keys(newHashMap).length} group(s).`);
+
+        const { violations, preview } = filterGroupSettings(entriesWithSettings, { limit: 3 });
+        debugLog(`🚨 Violations found: ${violations.length}`);
+
+        if (violations.length > 0) {
+            const preview = violations.slice(0, 3).map(v => `${v.email} - ${v.key}: ${v.actual} → ${v.expected}`);
+            debugLog(`🔍 Sample violations:\n` + preview.join('\n'));
+        }
+
         if (violations.length === 0) {
             debugLog("✅ No group settings violations found. Skipping write.");
             return all;
         }
 
-        if (!executionOptions.dryRun) {
-            const violationKeyMap = generateViolationKeyMap(violations);
-            const rowMap = writeDetailReport(violations);
-            writeSummaryReport(rowMap, violationKeyMap);
-        }
+        // Report writers
+        const violationKeyMap = generateViolationKeyMap(violations);
+        debugLog("🧩 Violation key map generated.");
+        const rowMap = writeDetailReport(violations);
+        debugLog("📝 Detail report written.");
+        writeSummaryReport(rowMap, violationKeyMap);
+        debugLog("📝 Summary report written.");
 
         debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${violations.length} key-level violations.`);
         if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
@@ -241,4 +245,14 @@ function getDiscrepancyRowsFromSheet() {
         key,
         expected,
     })).filter(row => row.email && row.key && row.expected !== undefined);
+}
+
+function runScript() {
+    const result = listGroupSettings({
+        bypassETag: true,
+        bypassHash: true,
+        dryRun: false
+    });
+
+    Logger.log(result); // ✅ This logs the output from the function
 }

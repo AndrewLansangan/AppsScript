@@ -110,14 +110,17 @@ function normalizeDirectoryGroup(group) {
     };
 }
 
-function resolveExecutionOptions(overrides = {}) {
+function resolveExecutionOptions(overrides) {
+    overrides = overrides || {};
+
     return {
-        bypassETag: overrides.bypassETag ?? EXECUTION_MODE.bypassETag,
-        bypassHash: overrides.bypassHash ?? EXECUTION_MODE.bypassHash,
-        manual: overrides.manual ?? EXECUTION_MODE.manual,
-        dryRun: overrides.dryRun ?? EXECUTION_MODE.dryRun
+        bypassETag: (typeof overrides.bypassETag !== 'undefined') ? overrides.bypassETag : EXECUTION_MODE.bypassETag,
+        bypassHash: (typeof overrides.bypassHash !== 'undefined') ? overrides.bypassHash : EXECUTION_MODE.bypassHash,
+        manual:     (typeof overrides.manual !== 'undefined')     ? overrides.manual     : EXECUTION_MODE.manual,
+        dryRun:     (typeof overrides.dryRun !== 'undefined')     ? overrides.dryRun     : EXECUTION_MODE.dryRun
     };
 }
+
 /**
  * Returns filtered group data based on optional whitelist and blacklist terms.
  *

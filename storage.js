@@ -92,7 +92,7 @@ function clearGroupProperties() {
         'GROUP_NORMALIZED_DATA',
         'GROUP_NORMALIZED_DATA_HASH',
         'GROUP_SETTINGS_HASH_MAP',
-        'LAST_GROUP_SYNC,' +
+        'LAST_GROUP_SYNC,',
         'GROUP_HASH_MAP'
     ];
     const props = PropertiesService.getScriptProperties();

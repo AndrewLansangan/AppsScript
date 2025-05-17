@@ -49,14 +49,22 @@ function formatSheet(sheet, headers, options = {}) {
         wrap: options.wrap ?? true,
         resize: options.resize ?? true,
         hide: options.hide ?? true,
-        style: options.style ?? true
+        style: options.style ?? true,
+        hidden: options.hidden ?? config.hidden ?? false  // ✅ new toggle
     };
 
     if (opts.style) styleSheetHeaders(sheet, headers);
     if (opts.hide && config.hide) hideSheetColumns(sheet, config.hide, headers);
     if (opts.resize && config.resize) autoResizeSheetColumns(sheet, config.resize, headers);
     if (opts.wrap && config.wrap) autoWrapSheetColumns(sheet, config.wrap, headers);
+
+    // ✅ Hide the entire sheet if requested
+    if (opts.hidden === true && !sheet.isSheetHidden()) {
+        sheet.hideSheet();
+        debugLog(`🙈 Entire sheet hidden: ${sheet.getName()}`);
+    }
 }
+
 
 function styleSheetHeaders(sheet, headers) {
     const range = sheet.getRange(1, 1, 1, headers.length);
@@ -266,7 +274,6 @@ function generateViolationKeyMap(violations) {
 }
 
 function resolveGroupEmails() {
-    // ✅ Step 1: Try ScriptProperties cache
     const raw = PropertiesService.getScriptProperties().getProperty("GROUP_EMAILS");
     if (raw) {
         try {
@@ -275,16 +282,18 @@ function resolveGroupEmails() {
                 .map(entry => typeof entry === 'string' ? entry : entry.email)
                 .filter(email => typeof email === 'string' && email.includes('@'));
 
+            debugLog(`📦 Loaded ${emails.length} group emails from ScriptProperties`);
             if (emails.length > 0) {
-                debugLog(`📦 Loaded ${emails.length} group emails from ScriptProperties`);
-                return emails;
+                const preview = emails.slice(0, 5).join(', ');
+                debugLog(`🔍 Preview: ${preview}${emails.length > 5 ? '...' : ''}`);
             }
+            return emails;
         } catch (e) {
             errorLog("❌ Failed to parse GROUP_EMAILS from ScriptProperties", e.toString());
         }
     }
 
-    // 🛟 Step 2: Fallback — read from GROUP_LIST sheet
+    // 🛟 Fallback — read from GROUP_LIST sheet
     try {
         const ss = SpreadsheetApp.openById(getSheetId());
         const sheet = ss.getSheetByName(SHEET_NAMES.GROUP_LIST);
@@ -304,6 +313,10 @@ function resolveGroupEmails() {
         const emails = values.flat().filter(email => typeof email === 'string' && email.includes('@'));
 
         debugLog(`📄 Loaded ${emails.length} group emails from GROUP_LIST sheet`);
+        if (emails.length > 0) {
+            const preview = emails.slice(0, 5).join(', ');
+            debugLog(`🔍 Preview: ${preview}${emails.length > 5 ? '...' : ''}`);
+        }
         return emails;
     } catch (e) {
         errorLog("❌ Failed to resolve group emails from GROUP_LIST sheet", e.toString());

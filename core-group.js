@@ -55,8 +55,8 @@ function fetchSingleGroupData(email) {
  * - If an API error occurs (non-200 response), logs the error and returns an empty array `[]`.
  */
 
-function fetchAllGroupData(domain, options = EXECUTION_MODE) {
-    const { bypassETag = false, manual = false } = options;
+function fetchAllGroupData(domain, options) {
+    const { bypassETag, manual } = resolveExecutionOptions(options);
 
     if (manual) {
         debugLog(`⚙️ Manual mode enabled — skipping fetch for domain ${domain}`);
@@ -68,8 +68,8 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
     const oldDomainETag = !bypassETag ? getDomainETag(domain) : null;
     const headers = buildAuthHeaders({ etag: oldDomainETag });
 
-    const oldETagMap = JSON.parse(PropertiesService.getScriptProperties().getProperty("GROUP_ETAGS") || '{}');
-    let etagMatched = false;
+    let domainEtagMatched = false;
+    const now = new Date().toISOString();
 
     do {
         let url = `${ADMIN_DIRECTORY_API_BASE_URL}?domain=${encodeURIComponent(domain)}`;
@@ -79,8 +79,8 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
         const status = res.getResponseCode();
 
         if (status === 304) {
-            debugLog(`🔁 No changes for ${domain} — ETag matched.`);
-            etagMatched = true;
+            debugLog(`🔁 No changes for ${domain} — domain-level ETag matched.`);
+            domainEtagMatched = true;
             break;
         }
 
@@ -99,40 +99,36 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
             setDomainETag(domain, newDomainETag);
         }
 
-        const currentGroups = (data.groups || []).map(group => ({
-            email: group.email,
-            name: group.name,
-            description: group.description,
-            directMembersCount: group.directMembersCount || 0,
-            adminCreated: group.adminCreated || false,
-            etag: group.etag || 'Not Found'
-        }));
-
+        const currentGroups = data.groups || [];
         groups.push(...currentGroups);
         pageToken = data.nextPageToken;
     } while (pageToken);
 
-    // 🛡️ Fallback if no groups returned due to ETag match
-    if (etagMatched && groups.length === 0) {
-        debugLog("💡 ETag matched — using fallback.");
+    if (domainEtagMatched && groups.length === 0) {
+        errorLog("⚠️ No groups returned due to domain-level ETag match. Using fallback GROUP_NORMALIZED_DATA.");
         const fallback = getStoredData("GROUP_NORMALIZED_DATA") || [];
         return { normalizedData: fallback, metaData: [] };
     }
 
-    // 🧾 Prepare normalizedData and metaData for saving
     const normalizedData = [];
     const metaData = [];
-    const now = new Date().toISOString();
 
     for (const group of groups) {
         const { businessHash, fullHash } = generateGroupSettingsHashPair(group);
-        const oldETag = oldETagMap[group.email] || '';
+
+        const email = group.email;
+        const oldETag = getGroupEtag(email);
         const newETag = group.etag || 'Not Found';
+
         const isModified = oldETag !== newETag;
         const lastModified = isModified && oldETag ? now : '';
 
+        if (newETag && newETag !== oldETag) {
+            setGroupETag(email, newETag);
+        }
+
         normalizedData.push({
-            email: group.email,
+            email,
             name: group.name,
             description: group.description,
             directMembersCount: group.directMembersCount || 0,
@@ -141,11 +137,11 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
         });
 
         metaData.push({
-            email: group.email,
+            email,
             businessHash,
             fullHash,
-            oldBusinessHash: '', // Placeholder — not stored yet
-            oldFullHash: '',     // Placeholder — not stored yet
+            oldBusinessHash: '',
+            oldFullHash: '',
             oldETag,
             newETag,
             lastModified
@@ -155,18 +151,58 @@ function fetchAllGroupData(domain, options = EXECUTION_MODE) {
     return { normalizedData, metaData };
 }
 
-function fetchGroupSettings(email, options = EXECUTION_MODE) {
-    const { manual = false, bypassHash = false } = options || {};
+/**
+ * Compares group settings against UPDATED_SETTINGS and returns discrepancies.
+ *
+ * @param {Array<Object>} groupSettingsData - Array of objects with {email, settings}.
+ * @returns {Array<Object>} - Array of discrepancy objects for writing to sheet.
+ */
+/**
+ * ✅ Refactored filterGroupSettings — returns violations + preview array
+ */
+function filterGroupSettings(groupSettingsData, options = { limit: 3 }) {
+    const now = new Date().toISOString();
+    const keysToCheck = Object.keys(UPDATED_SETTINGS);
+    const violations = [];
+
+    groupSettingsData.forEach(entry => {
+        const { email, settings = {} } = entry;
+        if (!email || entry.unchanged || entry.error) return;
+
+        const { businessHash } = generateGroupSettingsHashPair(settings);
+
+        keysToCheck.forEach(key => {
+            const expectedValue = UPDATED_SETTINGS[key];
+            const actualValue = settings[key];
+
+            if (actualValue !== expectedValue) {
+                violations.push({
+                    email,
+                    key,
+                    expected: expectedValue,
+                    actual: actualValue ?? 'Not Found',
+                    hash: businessHash,
+                    lastModified: now
+                });
+            }
+        });
+    });
+
+    const preview = violations.slice(0, options.limit).map(v => `${v.email} - ${v.key}: ${v.actual} → ${v.expected}`);
+    return { violations, preview };
+}
+
+function fetchGroupSettings(email, options) {
+    const { manual = false, bypassHash = false } = resolveExecutionOptions(options);
 
     if (manual) {
         debugLog(`⚙️ Manual mode enabled — skipping fetch for ${email}`);
-        return { email, manual: manual };
+        return { email, manual: true };
     }
 
     const encodedEmail = encodeURIComponent(email);
     const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodedEmail}?alt=json`;
     const headers = buildAuthHeaders();
-
 
     try {
         const res = UrlFetchApp.fetch(url, {
@@ -180,74 +216,66 @@ function fetchGroupSettings(email, options = EXECUTION_MODE) {
 
         if (status === 304) {
             debugLog(`🔁 API-level 304 Not Modified for ${email}`);
-            return {email, unchanged: true};
+            return { email, unchanged: true };
         }
 
         if (status !== 200 || !contentText || contentText.trim().startsWith('<')) {
             errorLog(`❌ Unexpected response for ${email}`, contentText.slice(0, 300));
-            return {email, error: true};
+            return { email, error: true };
         }
 
         const data = JSON.parse(contentText);
-        const {businessHash, fullHash} = generateGroupSettingsHashPair(data);
+        const { businessHash, fullHash } = generateGroupSettingsHashPair(data);
 
-        // const rawMap = PropertiesService.getScriptProperties().getProperty("GROUP_DUAL_HASH_MAP");
         const hashMap = loadGroupSettingsHashMap();
         const old = hashMap[email] || {};
-        //
-        // const hashMap = rawMap ? JSON.parse(rawMap) : {};
-        // const old = hashMap[email] || {};
 
-        let businessUnchanged = true;
-        let fullUnchanged = true;
+        let businessUnchanged = false;
+        let fullUnchanged = false;
 
-        if (CHECK_BUSINESS_HASH) {
+        if (!bypassHash && CHECK_BUSINESS_HASH) {
             businessUnchanged = businessHash === old.businessHash;
-        } else {
-            debugLog(`⚠️ ${email} - businessHash comparison is DISABLED`);
+        } else if (bypassHash) {
+            debugLog(`⚠️ ${email} - bypassHash is enabled — treating as changed`);
         }
 
-        if (CHECK_FULL_HASH) {
+        if (!bypassHash && CHECK_FULL_HASH) {
             fullUnchanged = fullHash === old.fullHash;
-        } else {
-            debugLog(`⚠️ ${email} - fullHash comparison is DISABLED`);
         }
 
-        const skip =
-            (CHECK_BUSINESS_HASH ? businessUnchanged : true) &&
-            (CHECK_FULL_HASH ? fullUnchanged : true);
+        const skip = !bypassHash &&
+            ((CHECK_BUSINESS_HASH ? businessUnchanged : true) &&
+                (CHECK_FULL_HASH ? fullUnchanged : true));
 
         if (skip) {
-
             return {
                 email,
                 settings: data,
                 unchanged: true
             };
         }
+
         hashMap[email] = { businessHash, fullHash };
         storeGroupSettingsHashMap(hashMap);
 
         return {
             email,
             settings: data,
-            hashes: {
-                businessHash,
-                fullHash
-            }
+            hashes: { businessHash, fullHash }
         };
 
     } catch (err) {
         errorLog(`❌ Exception in fetchGroupSettings for ${email}`, err.toString());
-        return {email, error: true};
+        return { email, error: true };
     }
 }
+
 
 /**
  * Fetches group settings for multiple groups and returns categorized results.
  *
  * @param {string[]} emails - Array of group email addresses.
- * @param options
+ * @param {Object} options - Execution flags (manual, dryRun, bypassHash, etc.)
  * @returns {{
  *   all: Object[],
  *   changed: Object[],
@@ -255,13 +283,12 @@ function fetchGroupSettings(email, options = EXECUTION_MODE) {
  *   errored: Object[]
  * }}
  */
-function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
-    const {
-        bypassETag = true,
-        bypassHash =    true,
-        manual = true,
-        dryRun = false } = options;
+function fetchAllGroupSettings(emails, options) {
+    const executionOptions = resolveExecutionOptions(options);
+    const { bypassETag, bypassHash, manual, dryRun } = executionOptions;
+
     if (!Array.isArray(emails) || emails.length === 0) {
+        errorLog("❌ No group emails provided to fetchAllGroupSettings.");
         return { all: [], changed: [], unchanged: [], errored: [] };
     }
 
@@ -270,9 +297,12 @@ function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
     const unchanged = [];
     const errored = [];
 
-    emails.forEach(email => {
+    debugLog(`📡 Fetching settings for ${emails.length} groups...`);
+
+    emails.forEach((email, i) => {
         try {
-            const result = fetchGroupSettings(email, options);
+            const result = fetchGroupSettings(email, executionOptions);
+
             all.push(result);
 
             if (result.error) {
@@ -282,6 +312,11 @@ function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
             } else {
                 changed.push(result);
             }
+
+            if ((i + 1) % 50 === 0) {
+                debugLog(`⏳ Processed ${i + 1}/${emails.length} emails...`);
+            }
+
         } catch (err) {
             const fallback = { email, error: true };
             all.push(fallback);
@@ -290,46 +325,11 @@ function fetchAllGroupSettings(emails, options = EXECUTION_MODE) {
         }
     });
 
+    debugLog(`✅ Completed group settings fetch:
+  - Total: ${all.length}
+  - Changed: ${changed.length}
+  - Unchanged: ${unchanged.length}
+  - Errored: ${errored.length}`);
+
     return { all, changed, unchanged, errored };
-}
-
-// ===========================
-// 🔍 Data Layer
-// ===========================
-
-/**
- * Compares group settings against UPDATED_SETTINGS and returns discrepancies.
- *
- * @param {Array<Object>} groupSettingsData - Array of objects with {email, settings}.
- * @returns {Array<Object>} - Array of discrepancy objects for writing to sheet.
- */
-function filterGroupSettings(groupSettingsData) {
-    debugLog(`📌 Keys to check: ${Object.keys(UPDATED_SETTINGS).join(', ')}`);
-
-    const now = new Date().toISOString();
-    const discrepancies = [];
-
-    groupSettingsData.forEach(entry => {
-        const {email, settings = {}} = entry;
-        if (!email || entry.unchanged || entry.error) return;
-
-        const {businessHash} = generateGroupSettingsHashPair(settings);
-
-        Object.entries(UPDATED_SETTINGS).forEach(([key, expectedValue]) => {
-            const actualValue = settings[key];
-
-            if (actualValue !== expectedValue) {
-                discrepancies.push({
-                    email,
-                    key,
-                    expected: expectedValue,
-                    actual: actualValue ?? 'Not Found',
-                    hash: businessHash,
-                    lastModified: now
-                });
-            }
-        });
-    });
-
-    return discrepancies;
 }

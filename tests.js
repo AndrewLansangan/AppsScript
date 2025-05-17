@@ -1,135 +1,187 @@
-function testSaveToSheet_modifiedTimestamp() {
-  const testEmail = "test@domain.com";
+function testWriteGroupMetaSheet_withTimestampChange() {
+  const sheetName = SHEET_NAMES.GROUP_LIST_META;
+  const headers = HEADERS[sheetName];
 
-  // Step 1: Simulate stored hashes
-  const oldHashMap = {
-    [testEmail]: {
-      businessHash: "abc123",
-      fullHash: "xyz789"
-    }
-  };
-  PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(oldHashMap));
+  const email = "example-group@domain.com";
+  const now = new Date().toISOString();
 
-  // Step 2: Simulate a change in the hash
-  const newHashMap = {
-    [testEmail]: {
-      businessHash: "abc999", // changed
-      fullHash: "xyz789"      // same
-    }
-  };
+  const initial = [{
+    email,
+    businessHash: "hash-111",
+    fullHash: "hash-aaa",
+    oldBusinessHash: "",
+    oldFullHash: "",
+    oldETag: "",
+    newETag: "etag-1",
+    lastModified: now
+  }];
 
-  // Run the function (should detect change and set Last Modified)
-  saveToSheet(newHashMap);
+  // 1️⃣ Write initial row
+  writeGroupMetaSheet(initial);
+  Logger.log("✅ Wrote initial row.");
 
-  Logger.log("✅ First run (modified hash) complete");
+  // 2️⃣ Wait and write updated row with changed hash
+  Utilities.sleep(1000);
+  const updated = [{
+    ...initial[0],
+    businessHash: "hash-222" // trigger change
+  }];
 
-  // Step 3: Save again with same values (should not modify timestamp)
-  PropertiesService.getScriptProperties().setProperty("GROUP_DUAL_HASH_MAP", JSON.stringify(newHashMap));
+  writeGroupMetaSheet(updated);
+  Logger.log("✅ Wrote updated row.");
 
-  const unchangedHashMap = { ...newHashMap };
-  Utilities.sleep(1000); // Give it a second for clear timestamp difference
-  saveToSheet(unchangedHashMap);
-
-  Logger.log("✅ Second run (unchanged hash) complete");
-
-  // Optionally log what's in the sheet now
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.GROUP_HASHES);
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.HASHES.length).getValues();
-
-  rows.forEach(row => {
-    Logger.log(`📄 ${row.join(' | ')}`);
-  });
+  // 3️⃣ Read and log from sheet
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+  rows.forEach(row => Logger.log(`📄 ${row.join(" | ")}`));
 }
+
 function testHashSystem() {
-  const sampleGroups = [
-    {
-      email: 'test1@example.com',
-      settings: {
-        whoCanPostMessage: 'ANYONE_CAN_POST',
-        whoCanInvite: 'ALL_MANAGERS_CAN_INVITE'
+    const sampleGroups = [
+      {
+        email: 'test1@example.com',
+        settings: {
+          whoCanPostMessage: 'ANYONE_CAN_POST',
+          whoCanInvite: 'ALL_MANAGERS_CAN_INVITE'
+        }
+      },
+      {
+        email: 'test2@example.com',
+        settings: {
+          whoCanPostMessage: 'ALL_MEMBERS_CAN_POST',
+          whoCanInvite: 'OWNERS_ONLY'
+        }
       }
-    },
-    {
-      email: 'test2@example.com',
-      settings: {
-        whoCanPostMessage: 'ALL_MEMBERS_CAN_POST',
-        whoCanInvite: 'OWNERS_ONLY'
-      }
+    ];
+
+    // Compute and store initial hashes
+    const originalHashMap = generateGroupSettingsHashMap(sampleGroups);
+    storeGroupSettingsHashMap(originalHashMap);
+
+    debugLog("✅ Step 1: Saved original hashes.");
+    Logger.log(originalHashMap);
+
+    // Simulate a change in one setting
+    const modifiedGroups = JSON.parse(JSON.stringify(sampleGroups));
+    modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
+
+    const newHashMap = generateGroupSettingsHashMap(modifiedGroups);
+    logHashDifferences(newHashMap, originalHashMap);
+    const changedEmails = getGroupsWithHashChanges(newHashMap);
+
+    debugLog("✅ Step 2: After modification");
+    Logger.log(newHashMap);
+    Logger.log("Detected changed groups: " + changedEmails.join(', '));
+
+    // Optionally, assert expected result
+    if (changedEmails.includes('test1@example.com') && !changedEmails.includes('test2@example.com')) {
+      debugLog("✅ Test passed: Change detection works as expected.");
+    } else {
+      errorLog("❌ Test failed: Hash change detection is not working as expected.");
     }
-  ];
-
-  // Compute and store initial hashes
-  const originalHashMap = generateGroupSettingsHashMap(sampleGroups);
-  storeGroupSettingsHashMap(originalHashMap);
-
-  debugLog("✅ Step 1: Saved original hashes.");
-  Logger.log(originalHashMap);
-
-  // Simulate a change in one setting
-  const modifiedGroups = JSON.parse(JSON.stringify(sampleGroups));
-  modifiedGroups[0].settings.whoCanPostMessage = 'MODERATORS_ONLY'; // Change it
-
-  const newHashMap = generateGroupSettingsHashMap(modifiedGroups);
-  logHashDifferences(newHashMap, originalHashMap);
-  const changedEmails = getGroupsWithHashChanges(newHashMap);
-
-  debugLog("✅ Step 2: After modification");
-  Logger.log(newHashMap);
-  Logger.log("Detected changed groups: " + changedEmails.join(', '));
-
-  // Optionally, assert expected result
-  if (changedEmails.includes('test1@example.com') && !changedEmails.includes('test2@example.com')) {
-    debugLog("✅ Test passed: Change detection works as expected.");
-  } else {
-    errorLog("❌ Test failed: Hash change detection is not working as expected.");
   }
+
+function testInitializeSheets() {
+  initializeAllSheets();
+  Logger.log("✅ Ran initializeAllSheets to create and format all defined sheets.");
 }
 
-function testRegenerateSheets() {
-  regenerateSheets();
-}
 function testLoggingSystem() {
-  logEvent('DEBUG', 'Test', 'Logger', 'Test Run', 'hash123', 'This is a test log');
+  const category = "TestCategory";
+  const action = "LogAction";
+  const hash = "abc123";
+  const message = "This is a test log message.";
+
+  logEventToSheet("GroupListLog", category, action, hash, message);
+  Logger.log("✅ Logged test event to GroupListLog and ACTIVITY LOG");
 }
+
 
 function runManualGroupSync() {
   const domain = getWorkspaceDomain();
-  const groupData = fetchAllGroupData(domain, { bypassETag: true, manual: false });
-  const emails = groupData.map(g => g.email);
-  const results = fetchAllGroupSettings(emails, { manual: false });
-  logEventToSheet('ManualRun', 'group settings', 'Completed', '', `Processed ${emails.length} groups`);
-}
-function testWriteAllSheets() {
-  regenerateSheets();
-  writeGroupListToSheet([{ email: 'example@domain.com', name: 'Test Group', description: 'For testing', directMembersCount: 5, adminCreated: true }]);
-  recordDomainETagChange('grey-box.ca', 'etag-old', 'etag-new');
-}
+  const { normalizedData } = fetchAllGroupData(domain, { bypassETag: true, manual: false });
 
-function simulateUpdateGroupSettings() {
-  const violations = getDiscrepancyRowsFromSheet();
-  if (!violations || violations.length === 0) {
-    debugLog("✅ No discrepancies found — nothing to simulate.");
-    return [];
+  if (!Array.isArray(normalizedData) || normalizedData.length === 0) {
+    errorLog("❌ No groups fetched in manual sync.");
+    return;
   }
 
-  const updates = {};
-  violations.forEach(({ email, key, expected }) => {
-    if (!updates[email]) updates[email] = {};
-    updates[email][key] = expected;
-  });
+  const emails = normalizedData.map(g => g.email);
+  const { all } = fetchAllGroupSettings(emails, { manual: false });
 
-  const results = [];
+  logEventToSheet('ManualRun', 'group settings', 'Completed', '', `Processed ${emails.length} groups`);
+  Logger.log(`✅ Synced ${emails.length} groups manually.`);
+}
 
-  Object.entries(updates).forEach(([email, updatePayload], i) => {
-    debugLog(`🧪 [${i + 1}] Simulated update for ${email}:\n${JSON.stringify(updatePayload, null, 2)}`);
-    results.push({
-      email,
-      success: true,
-      simulated: true,
-      keys: Object.keys(updatePayload)
+function testWriteAllSheets() {
+  initializeAllSheets();
+
+  writeGroupListToSheet([
+    {
+      email: 'example@domain.com',
+      name: 'Test Group',
+      description: 'For testing',
+      directMembersCount: 5,
+      adminCreated: true
+    }
+  ]);
+
+  recordDomainETagChange('grey-box.ca', 'etag-old', 'etag-new');
+  Logger.log("✅ Wrote test group to sheet and logged ETag change.");
+}
+
+
+  function simulateUpdateGroupSettings() {
+    const violations = getDiscrepancyRowsFromSheet();
+    if (!violations || violations.length === 0) {
+      debugLog("✅ No discrepancies found — nothing to simulate.");
+      return [];
+    }
+
+    const updates = {};
+    violations.forEach(({ email, key, expected }) => {
+      if (!updates[email]) updates[email] = {};
+      updates[email][key] = expected;
     });
-  });
 
-  debugLog(`✅ Simulated ${results.length} group setting updates.`);
-  return results;
+    const results = [];
+
+    Object.entries(updates).forEach(([email, updatePayload], i) => {
+      debugLog(`🧪 [${i + 1}] Simulated update for ${email}:\n${JSON.stringify(updatePayload, null, 2)}`);
+      results.push({
+        email,
+        success: true,
+        simulated: true,
+        keys: Object.keys(updatePayload)
+      });
+    });
+
+    debugLog(`✅ Simulated ${results.length} group setting updates.`);
+    return results;
+  }
+
+/**
+ * 🔍 DEBUG TOOL: Unhide all hidden sheets for inspection.
+ */
+function unhideAllSheets() {
+  const ss = SpreadsheetApp.openById(getSheetId());
+  ss.getSheets().forEach(sheet => {
+    if (sheet.isSheetHidden()) {
+      sheet.showSheet();
+      debugLog(`👁️ Unhid sheet: ${sheet.getName()}`);
+    }
+  });
+}
+
+/**
+ * 📋 DEBUG TOOL: Log visibility status of all sheets.
+ */
+function logSheetVisibility() {
+  const ss = SpreadsheetApp.openById(getSheetId());
+  const sheets = ss.getSheets();
+  sheets.forEach(sheet => {
+    const name = sheet.getName();
+    const hidden = sheet.isSheetHidden();
+    debugLog(`🧾 Sheet: "${name}" — ${hidden ? '🔒 Hidden' : '👁️ Visible'}`);
+  });
 }

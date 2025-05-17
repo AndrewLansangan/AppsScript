@@ -64,32 +64,38 @@ const FORMATTING_CONFIG = {
   [SHEET_NAMES.GROUP_LIST]: {
     hide: ['Last Modified', 'Old ETag'],
     resize: ['Email', 'Name', 'Description'],
-    wrap: []
+    wrap: [],
+    hidden: false
   },
   [SHEET_NAMES.GROUP_LIST_META]: {
-    hide: ['New Business Hash', 'New Full Hash', 'Old Business Hash', 'Old Full Hash', 'Last Modified'],
-    resize: ['Email'],
-    wrap: []
+    hide: [],
+    resize: ['Email', 'Last Modified'],
+    wrap: [],
+    hidden: true
   },
   [SHEET_NAMES.DETAIL_REPORT]: {
     hide: ['Hash', 'Last Modified'],
     resize: ['Email', 'Expected', 'Actual', 'key'],
-    wrap: []
+    wrap: [],
+    hidden: false
   },
   [SHEET_NAMES.SUMMARY_REPORT]: {
     hide: [],
     resize: ['Email', '# Violations', 'Violated Keys', 'Last Modified'],
-    wrap: []
+    wrap: [],
+    hidden: false
   },
   [SHEET_NAMES.ACTIVITY]: {
     hide: [],
     resize: ['Timestamp', 'Source', 'Entity Type', 'Email / ID', 'Action'],
-    wrap: ['Details']
+    wrap: ['Details'],
+    hidden: true
   },
   [SHEET_NAMES.SETTINGS_UPDATE_LOG]: {
     hide: [],
     resize: ['Email', 'Status', 'Success', 'Updated Keys'],
-    wrap: ['Error']
+    wrap: ['Error'],
+    hidden: true
   },
 }
 

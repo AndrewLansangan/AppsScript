@@ -147,9 +147,9 @@ function checkTokenScopes() {
     const response = UrlFetchApp.fetch(url);
     const json = JSON.parse(response.getContentText());
 
-    infoLog("Token info retrieved", jsonResponse);
-    infoLog("Scopes granted to the token:", jsonResponse.scope);
-    return jsonResponse.scope;
+    infoLog("Token info retrieved", json);
+    infoLog("Scopes granted to the token:", json.scope);
+    return json.scope;
   } catch (e) {
     errorLog("Error checking token scopes", e.message);
     return null;
