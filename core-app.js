@@ -11,22 +11,40 @@ function verifySignature(secret, payload, githubSignature) {
     return computedSignature === githubSignature;
 }
 
+function doGet(e) {
+    const headers = ["Issue ID", "Title", "Body", "Action", "Updated At", "URL"];
+    const sheet = getOrCreateSheet("GitHub Issues", headers);
+
+    const last = sheet.getLastRow();
+    if (last <= 1) {
+        return ContentService.createTextOutput("No issues logged yet.");
+    }
+
+    const lastRow = sheet.getRange(last, 1, 1, headers.length).getValues()[0];
+    return ContentService
+        .createTextOutput("📝 Last GitHub Issue:\n" + JSON.stringify(lastRow, null, 2))
+        .setMimeType(ContentService.MimeType.TEXT);
+}
+
+
 function doPost(e) {
     try {
         const headers = e?.headers || {};
         const userAgent = headers['User-Agent'] || '';
         const githubSignature = headers['X-Hub-Signature-256'];
         const payload = e.postData.contents;
-
+        Logger.log("🚀 doPost triggered");
+        Logger.log("Headers: " + JSON.stringify(e?.headers));
+        Logger.log("Body: " + e.postData?.contents);
         // ✅ 1. Ensure request is from GitHub
         if (!userAgent.includes('GitHub-Hookshot')) {
-            errorLog('❌ Rejected: Not from GitHub.');
+            Logger.log('❌ Rejected: Not from GitHub.');
             return ContentService.createTextOutput('Forbidden');
         }
 
         // ✅ 2. Verify signature (if using a secret)
         if (GITHUB_SECRET && !verifySignature(GITHUB_SECRET, payload, githubSignature)) {
-            errorLog('❌ Invalid GitHub signature.');
+            Logger.log('❌ Invalid GitHub signature.');
             return ContentService.createTextOutput('Unauthorized');
         }
 
@@ -34,7 +52,7 @@ function doPost(e) {
         const json = JSON.parse(payload);
 
         if (json.zen) {
-            debugLog('✅ GitHub webhook ping received.');
+            Logger.log('✅ GitHub webhook ping received.');
             return ContentService.createTextOutput('Ping OK');
         }
 
@@ -48,17 +66,15 @@ function doPost(e) {
                 issue.id,
                 issue.title,
                 issue.body,
-                action,
-                issue.updated_at,
-                issue.html_url
+                action
             ]);
 
-            debugLog(`✅ Logged issue: ${issue.title} (${action})`);
+            Logger.log(`✅ Logged issue: ${issue.title} (${action})`);
         }
 
         return ContentService.createTextOutput("OK");
     } catch (error) {
-        errorLog("🚨 Error: " + error.message);
+        Logger.log("🚨 Error: " + error.message);
         return ContentService.createTextOutput("Error");
     }
 }

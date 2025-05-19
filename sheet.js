@@ -162,7 +162,7 @@ function writeGroupListToSheet(groupData) {
 
 function writeDetailReport(violations) {
 
-    const headers = HEADERS[SHEET_NAMES.DETAIL_REPORT];
+    const headers = [...HEADERS[SHEET_NAMES.DETAIL_REPORT], 'Compliant'];
     const sheet = getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, headers);
 
     if (!Array.isArray(violations) || violations.length === 0) {
@@ -190,7 +190,7 @@ function writeDetailReport(violations) {
         v.actual ?? 'Not Found',
         v.hash ?? 'Not Found',
         now,
-        true // ✅ checkbox at the end
+        v.actual === v.expected ? '✅' : '❌'
     ]);
 
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
@@ -475,37 +475,28 @@ function getDiscrepancyRowsFromSheet() {
     })).filter(row => row.email && row.key && row.expected !== undefined && row.apply);
 }
 
-function checkAllUpdates() {
+function applyCompliantFormatting() {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
     if (!sheet) return;
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return;
-    const column = HEADERS[SHEET_NAMES.DETAIL_REPORT].length;
-    sheet.getRange(2, column, lastRow - 1).setValue(true);
-}
 
-function uncheckAllUpdates() {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
-    if (!sheet) return;
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return;
-    const column = HEADERS[SHEET_NAMES.DETAIL_REPORT].length;
-    sheet.getRange(2, column, lastRow - 1).setValue(false);
-}
+    const headers = [...HEADERS[SHEET_NAMES.DETAIL_REPORT], 'Compliant'];
+    const colIndex = headers.indexOf('Compliant') + 1;
+    const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1);
 
-function applyConditionalFormatting() {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
-    if (!sheet) return;
-    const column = HEADERS[SHEET_NAMES.DETAIL_REPORT].length;
-    const range = sheet.getRange(2, column, sheet.getLastRow() - 1);
+    const rules = [
+        SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo('✅')
+            .setBackground('#d9ead3')
+            .setFontColor('green')
+            .setRanges([range])
+            .build(),
+        SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo('❌')
+            .setBackground('#f4cccc')
+            .setFontColor('red')
+            .setRanges([range])
+            .build()
+    ];
 
-    const rule = SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied(`=$${String.fromCharCode(64 + column)}2=TRUE`)
-        .setBackground('#dff0d8') // light green
-        .setRanges([range])
-        .build();
-
-    const rules = sheet.getConditionalFormatRules();
-    rules.push(rule);
     sheet.setConditionalFormatRules(rules);
 }
