@@ -145,3 +145,12 @@ function filterGroups(groupData, whitelist = [], blacklist = []) {
         return !isBlacklisted && isWhitelisted;
     });
 }
+
+function generateWebhookSecret() {
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()';
+    let secret = '';
+    for (let i = 0; i < 32; i++) {
+        secret += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    Logger.log(secret);
+}
