@@ -12,9 +12,22 @@
  * @param {string[]} expectedHeaders
  * @returns {GoogleAppsScript.Spreadsheet.Sheet}
  */
+/**
+ * Retrieves or force-resets a sheet, and ensures headers + formatting.
+ * @param {string} sheetName
+ * @param {string[]} expectedHeaders
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet}
+ */
 function getOrCreateSheet(sheetName, expectedHeaders = null) {
     const ss = SpreadsheetApp.openById(getSheetId());
+    const props = PropertiesService.getScriptProperties();
+    const shouldReset = props.getProperty("CLEAN_RUN_ACTIVE") === "true";
     let sheet = ss.getSheetByName(sheetName);
+    if (sheet && shouldReset) {
+        ss.deleteSheet(sheet);
+        debugLog(`🗑️ Force reset: Deleted and will recreate "${sheetName}"`);
+        sheet = null;
+    }
 
     if (!sheet) {
         sheet = ss.insertSheet(sheetName);
@@ -65,7 +78,6 @@ function formatSheet(sheet, headers, options = {}) {
     }
 }
 
-
 function styleSheetHeaders(sheet, headers) {
     const range = sheet.getRange(1, 1, 1, headers.length);
     range.setFontWeight("bold").setHorizontalAlignment("center");
@@ -100,7 +112,6 @@ function doHeadersMatch(sheet, expectedHeaders) {
     return JSON.stringify(actual) === JSON.stringify(expectedHeaders);
 }
 
-
 // ===========================
 // ⚙️ INITIALIZATION LAYER
 // ===========================
@@ -132,10 +143,10 @@ function writeGroupListToSheet(groupData) {
         })
     );
 
-    // Clear old content
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
+    // // Clear old content
+    // if (sheet.getLastRow() > 1) {
+    //     sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    // }
 
     // Write new data
     if (rows.length > 0) {
@@ -150,6 +161,7 @@ function writeGroupListToSheet(groupData) {
 }
 
 function writeDetailReport(violations) {
+
     const headers = HEADERS[SHEET_NAMES.DETAIL_REPORT];
     const sheet = getOrCreateSheet(SHEET_NAMES.DETAIL_REPORT, headers);
 
@@ -159,14 +171,16 @@ function writeDetailReport(violations) {
     }
 
     if (!doHeadersMatch(sheet, headers)) {
-        errorLog("❌ Header mismatch in Detail Report sheet.");
-        return {};
+        warnLog("⚠️ Header mismatch detected — resetting sheet to fix headers.");
+        sheet.clear();
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
 
-    // Clear old content
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
+
+    // // Clear old content
+    // if (sheet.getLastRow() > 1) {
+    //     sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    // }
 
     const now = new Date().toISOString();
     const rows = violations.map(v => [
@@ -175,7 +189,8 @@ function writeDetailReport(violations) {
         v.expected,
         v.actual ?? 'Not Found',
         v.hash ?? 'Not Found',
-        now
+        now,
+        true // ✅ checkbox at the end
     ]);
 
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
@@ -183,7 +198,7 @@ function writeDetailReport(violations) {
 
     // ✅ Apply formatting after data is written
     formatSheet(sheet, headers);
-
+    applyConditionalFormatting(); // ← add this line
     // Return row count by email for summary
     const rowMap = {};
     violations.forEach(v => {
@@ -203,13 +218,14 @@ function writeSummaryReport(rowMap, keyMap) {
     }
 
     if (!doHeadersMatch(sheet, headers)) {
-        errorLog("❌ Header mismatch in Summary Report sheet.");
-        return;
+        warnLog("⚠️ Header mismatch detected — resetting sheet to fix headers.");
+        sheet.clear();
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
 
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
+    // if (sheet.getLastRow() > 1) {
+    //     sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    // }
 
     const now = new Date().toISOString();
     const rows = Object.entries(rowMap).map(([email, count]) => [
@@ -247,9 +263,9 @@ function writeGroupMetaSheet(metaData) {
         meta.lastModified
     ]);
 
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
+    // if (sheet.getLastRow() > 1) {
+    //     sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    // }
 
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     debugLog(`✅ Wrote ${rows.length} rows to ${sheetName}`);
@@ -264,7 +280,7 @@ function writeGroupMetaSheet(metaData) {
 
 function generateViolationKeyMap(violations) {
     const map = {};
-    violations.forEach(({ email, key }) => {
+    violations.forEach(({email, key}) => {
         if (!map[email]) map[email] = [];
         if (!map[email].includes(key)) {
             map[email].push(key);
@@ -410,9 +426,9 @@ function generateFilteredGroupSheet(sheetName, whitelist = [], blacklist = []) {
     const headers = HEADERS[SHEET_NAMES.GROUP_LIST];
     const sheet = getOrCreateSheet(sheetName, headers);
 
-    if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
-    }
+    // if (sheet.getLastRow() > 1) {
+    //     sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    // }
 
     const now = new Date().toISOString();
     const rows = filtered.map(group =>
@@ -426,6 +442,7 @@ function generateFilteredGroupSheet(sheetName, whitelist = [], blacklist = []) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     debugLog(`✅ Wrote ${rows.length} filtered groups to "${sheetName}"`);
 }
+
 function onOpen() {
     SpreadsheetApp.getUi()
         .createMenu('📂 Filter Tools')
@@ -433,10 +450,62 @@ function onOpen() {
         .addItem('➖ Generate EXCLUDED GROUPS', 'generateExcludedGroups')
         .addToUi();
 }
+
 function generateHRGroups() {
     generateFilteredGroupSheet("HR GROUPS", ["hr"], []);
 }
 
 function generateExcludedGroups() {
     generateFilteredGroupSheet("EXCLUDED GROUPS", [], ["dev", "internal", "test"]);
+}
+
+function getDiscrepancyRowsFromSheet() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
+    if (!sheet) {
+        errorLog("❌ DETAIL REPORT sheet not found.");
+        return [];
+    }
+
+    const rows = sheet.getDataRange().getValues().slice(1); // skip headers
+    return rows.map(([email, key, expected, , , , , apply]) => ({
+        email,
+        key,
+        expected,
+        apply: apply === true
+    })).filter(row => row.email && row.key && row.expected !== undefined && row.apply);
+}
+
+function checkAllUpdates() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
+    const column = HEADERS[SHEET_NAMES.DETAIL_REPORT].length;
+    sheet.getRange(2, column, lastRow - 1).setValue(true);
+}
+
+function uncheckAllUpdates() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
+    const column = HEADERS[SHEET_NAMES.DETAIL_REPORT].length;
+    sheet.getRange(2, column, lastRow - 1).setValue(false);
+}
+
+function applyConditionalFormatting() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
+    if (!sheet) return;
+    const column = HEADERS[SHEET_NAMES.DETAIL_REPORT].length;
+    const range = sheet.getRange(2, column, sheet.getLastRow() - 1);
+
+    const rule = SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(`=$${String.fromCharCode(64 + column)}2=TRUE`)
+        .setBackground('#dff0d8') // light green
+        .setRanges([range])
+        .build();
+
+    const rules = sheet.getConditionalFormatRules();
+    rules.push(rule);
+    sheet.setConditionalFormatRules(rules);
 }

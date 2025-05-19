@@ -333,3 +333,14 @@ function fetchAllGroupSettings(emails, options) {
 
     return { all, changed, unchanged, errored };
 }
+
+function patchGroupSettings(email, updatePayload) {
+    const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodeURIComponent(email)}`;
+    return UrlFetchApp.fetch(url, {
+        method: 'PATCH',
+        contentType: 'application/json',
+        payload: JSON.stringify(updatePayload),
+        headers: buildAuthHeaders({ json: true }), // if you support a `json: true` flag for auth
+        muteHttpExceptions: true
+    });
+}

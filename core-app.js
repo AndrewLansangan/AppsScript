@@ -1,9 +1,74 @@
 // ===========================
 // 🌐 App Entry Point and Workflows
 // ===========================
+/**
+ * Verifies the GitHub webhook signature
+ */
+function verifySignature(secret, payload, githubSignature) {
+    const raw = Utilities.computeHmacSha256Signature(payload, secret);
+    const encoded = raw.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+    const computedSignature = `sha256=${encoded}`;
+    return computedSignature === githubSignature;
+}
+
+function doPost(e) {
+    try {
+        const headers = e?.headers || {};
+        const userAgent = headers['User-Agent'] || '';
+        const githubSignature = headers['X-Hub-Signature-256'];
+        const payload = e.postData.contents;
+
+        // ✅ 1. Ensure request is from GitHub
+        if (!userAgent.includes('GitHub-Hookshot')) {
+            errorLog('❌ Rejected: Not from GitHub.');
+            return ContentService.createTextOutput('Forbidden');
+        }
+
+        // ✅ 2. Verify signature (if using a secret)
+        if (GITHUB_SECRET && !verifySignature(GITHUB_SECRET, payload, githubSignature)) {
+            errorLog('❌ Invalid GitHub signature.');
+            return ContentService.createTextOutput('Unauthorized');
+        }
+
+        // ✅ 3. Process the webhook payload
+        const json = JSON.parse(payload);
+
+        if (json.zen) {
+            debugLog('✅ GitHub webhook ping received.');
+            return ContentService.createTextOutput('Ping OK');
+        }
+
+        if (json.action && json.issue) {
+            const issue = json.issue;
+            const action = json.action;
+            const headers = ["Issue ID", "Title", "Body", "Action", "Updated At", "URL"];
+            const sheet = getOrCreateSheet("GitHub Issues", headers);
+
+            sheet.appendRow([
+                issue.id,
+                issue.title,
+                issue.body,
+                action,
+                issue.updated_at,
+                issue.html_url
+            ]);
+
+            debugLog(`✅ Logged issue: ${issue.title} (${action})`);
+        }
+
+        return ContentService.createTextOutput("OK");
+    } catch (error) {
+        errorLog("🚨 Error: " + error.message);
+        return ContentService.createTextOutput("Error");
+    }
+}
 
 function listGroups(options) {
     const executionOptions = resolveExecutionOptions(options);
+    if (executionOptions.cleanRun) {
+        debugLog("🧽 cleanRun: Clearing GROUP_EMAILS, GROUP_HASH_MAP, and GROUP_LIST sheets...");
+        clearGroupProperties(); // your ScriptProperties cleanup
+    }
 
     return benchmark("listGroups", () => {
         try {
@@ -25,10 +90,10 @@ function listGroups(options) {
             }
 
             // ✅ Proceed to write if changed or forced
-            writeGroupListToSheet(normalizedData);
+            writeGroupListToSheet(normalizedData, executionOptions.cleanRun);
 
             if (metaData.length > 0) {
-                writeGroupMetaSheet(metaData);
+                writeGroupMetaSheet(metaData, executionOptions.cleanRun);
             } else {
                 // 🛟 Fallback to previously stored hash map
                 debugLog(`ℹ️ No metadata returned from fetch — falling back to stored ScriptProperties`);
@@ -92,7 +157,13 @@ function listGroupSettings(options) {
     const executionOptions = resolveExecutionOptions(options);
     debugLog(`🔧 listGroupSettings options:\n` + JSON.stringify(executionOptions, null, 2));
 
-    return benchmark("listGroupSettings", () => {
+    if (executionOptions.cleanRun) {
+        debugLog("🧽 CLEAN_RUN: Deleting GROUP_SETTINGS_HASH_MAP and enabling sheet reset.");
+        PropertiesService.getScriptProperties().deleteProperty("GROUP_SETTINGS_HASH_MAP");
+        PropertiesService.getScriptProperties().setProperty("CLEAN_RUN_ACTIVE", "true");
+    }
+
+    const result = benchmark("listGroupSettings", () => {
         const groupEmails = resolveGroupEmails();
         debugLog(`📧 Resolved group emails: ${groupEmails.length}`);
         debugLog(JSON.stringify(groupEmails, null, 2));
@@ -113,12 +184,12 @@ function listGroupSettings(options) {
 
         const entriesWithSettings = all.filter(r => r.settings);
         debugLog(`✅ entriesWithSettings: ${entriesWithSettings.length}`);
+
         const validForHashing = entriesWithSettings.filter(r => r.hashes);
         debugLog(`✅ Groups with usable settings (validForHashing): ${validForHashing.length}`);
 
         const previousHashMap = loadGroupSettingsHashMap();
         const newHashMap = generateGroupSettingsHashMap(validForHashing);
-
         logHashDifferences(newHashMap, previousHashMap);
 
         const changedGroupCount = getGroupsWithHashChanges(newHashMap).length;
@@ -129,15 +200,12 @@ function listGroupSettings(options) {
             debugLog("ℹ️ No hash changes detected — continuing to check for setting violations anyway.");
         }
 
-
         storeGroupSettingsHashMap(newHashMap);
         debugLog(`📊 Stored new hash map for ${Object.keys(newHashMap).length} group(s).`);
 
-        const { violations, preview } = filterGroupSettings(entriesWithSettings, { limit: 3 });
+        const { violations, preview } = filterGroupSettings(entriesWithSettings);
         debugLog(`🚨 Violations found: ${violations.length}`);
-
-        if (violations.length > 0) {
-            const preview = violations.slice(0, 3).map(v => `${v.email} - ${v.key}: ${v.actual} → ${v.expected}`);
+        if (preview.length > 0) {
             debugLog(`🔍 Sample violations:\n` + preview.join('\n'));
         }
 
@@ -146,106 +214,112 @@ function listGroupSettings(options) {
             return all;
         }
 
-        // Report writers
         const violationKeyMap = generateViolationKeyMap(violations);
         debugLog("🧩 Violation key map generated.");
         const rowMap = writeDetailReport(violations);
         debugLog("📝 Detail report written.");
         writeSummaryReport(rowMap, violationKeyMap);
         debugLog("📝 Summary report written.");
-
         debugLog(`🔍 Checked ${groupEmails.length} groups. Found ${violations.length} key-level violations.`);
-        if (errored.length > 0) errorLog(`❌ ${errored.length} groups could not be processed.`);
+
+        if (errored.length > 0) {
+            errorLog(`❌ ${errored.length} groups could not be processed.`);
+        }
 
         return all;
     }, 2000);
+
+    // Clean up global flag
+    PropertiesService.getScriptProperties().deleteProperty("CLEAN_RUN_ACTIVE");
+    return result;
 }
 
-function updateGroupSettings() {
-    const violations = getDiscrepancyRowsFromSheet();
-    if (!violations || violations.length === 0) {
-        debugLog("✅ No discrepancies found — nothing to update.");
-        return [];
-    }
+// function updateGroupSettings() {
+//     const violations = getDiscrepancyRowsFromSheet();
+//     if (!violations || violations.length === 0) {
+//         debugLog("✅ No discrepancies found — nothing to update.");
+//         return [];
+//     }
+//
+//     // Build update payload by email
+//     const updates = {};
+//     violations.forEach(({ email, key, expected }) => {
+//         if (!email || !key || expected === undefined) return;
+//         if (!updates[email]) updates[email] = {};
+//         updates[email][key] = expected;
+//     });
+//
+//     // Confirm before applying updates
+//     const ui = SpreadsheetApp.getUi();
+//     const confirmText = `You are about to apply ${violations.length} key-level updates across ${Object.keys(updates).length} group(s).\n\nProceed with the changes?`;
+//     const response = ui.alert("⚠️ Confirm Settings Update", confirmText, ui.ButtonSet.YES_NO);
+//     if (response !== ui.Button.YES) {
+//         debugLog("❌ Settings update cancelled by user.");
+//         return [];
+//     }
+//
+//     // Apply PATCH updates
+//     const results = [];
+//
+//     Object.entries(updates).forEach(([email, updatePayload], i) => {
+//         try {
+//             debugLog(`🚀 [${i + 1}/${Object.keys(updates).length}] Updating ${email}`);
+//
+//             const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodeURIComponent(email)}`;
+//             const response = UrlFetchApp.fetch(url, {
+//                 method: 'PATCH',
+//                 contentType: 'application/json',
+//                 payload: JSON.stringify(updatePayload),
+//                 headers: {
+//                     Authorization: `Bearer ${getAccessToken()}`,
+//                 },
+//                 muteHttpExceptions: true,
+//             });
+//
+//             const status = response.getResponseCode();
+//             const responseBody = response.getContentText();
+//
+//             if (status >= 200 && status < 300) {
+//                 debugLog(`✅ [${i + 1}] Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
+//                 results.push({ email, status, keys: Object.keys(updatePayload), success: true });
+//             } else {
+//                 errorLog(`❌ [${i + 1}] Failed to update ${email}: ${responseBody}`);
+//                 results.push({
+//                     email,
+//                     status,
+//                     keys: Object.keys(updatePayload),
+//                     success: false,
+//                     error: responseBody
+//                 });
+//             }
+//
+//         } catch (err) {
+//             errorLog(`❌ [${i + 1}] Exception while updating ${email}`, err.toString());
+//             results.push({ email, success: false, error: err.toString() });
+//         }
+//     });
+//
+//     // Log to SETTINGS UPDATE LOG sheet
+//     logUpdateResults(results);
+//     return results;
+// }
 
-    // Build update payload by email
-    const updates = {};
-    violations.forEach(({ email, key, expected }) => {
-        if (!email || !key || expected === undefined) return;
-        if (!updates[email]) updates[email] = {};
-        updates[email][key] = expected;
-    });
-
-    // Confirm before applying updates
-    const ui = SpreadsheetApp.getUi();
-    const confirmText = `You are about to apply ${violations.length} key-level updates across ${Object.keys(updates).length} group(s).\n\nProceed with the changes?`;
-    const response = ui.alert("⚠️ Confirm Settings Update", confirmText, ui.ButtonSet.YES_NO);
-    if (response !== ui.Button.YES) {
-        debugLog("❌ Settings update cancelled by user.");
-        return [];
-    }
-
-    // Apply PATCH updates
-    const results = [];
-
-    Object.entries(updates).forEach(([email, updatePayload], i) => {
-        try {
-            debugLog(`🚀 [${i + 1}/${Object.keys(updates).length}] Updating ${email}`);
-
-            const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodeURIComponent(email)}`;
-            const response = UrlFetchApp.fetch(url, {
-                method: 'PATCH',
-                contentType: 'application/json',
-                payload: JSON.stringify(updatePayload),
-                headers: {
-                    Authorization: `Bearer ${getAccessToken()}`,
-                },
-                muteHttpExceptions: true,
-            });
-
-            const status = response.getResponseCode();
-            const responseBody = response.getContentText();
-
-            if (status >= 200 && status < 300) {
-                debugLog(`✅ [${i + 1}] Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
-                results.push({ email, status, keys: Object.keys(updatePayload), success: true });
-            } else {
-                errorLog(`❌ [${i + 1}] Failed to update ${email}: ${responseBody}`);
-                results.push({
-                    email,
-                    status,
-                    keys: Object.keys(updatePayload),
-                    success: false,
-                    error: responseBody
-                });
-            }
-
-        } catch (err) {
-            errorLog(`❌ [${i + 1}] Exception while updating ${email}`, err.toString());
-            results.push({ email, success: false, error: err.toString() });
-        }
-    });
-
-    // Log to SETTINGS UPDATE LOG sheet
-    logUpdateResults(results);
-    return results;
-}
-
-function getDiscrepancyRowsFromSheet() {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
-    if (!sheet) {
-        errorLog("❌ DETAIL REPORT sheet not found.");
-        return [];
-    }
-
-    const rows = sheet.getDataRange().getValues().slice(1); // skip headers
-
-    return rows.map(([email, key, expected]) => ({
-        email,
-        key,
-        expected,
-    })).filter(row => row.email && row.key && row.expected !== undefined);
-}
+// function getDiscrepancyRowsFromSheet() {
+//     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.DETAIL_REPORT);
+//     if (!sheet) {
+//         errorLog("❌ DETAIL REPORT sheet not found.");
+//         return [];
+//     }
+//
+//     const rows = sheet.getDataRange().getValues().slice(1); // skip headers
+//
+//     return rows.map(([email, key, expected, , , , apply]) => ({
+//         email,
+//         key,
+//         expected,
+//         apply: apply === true
+//     })).filter(row => row.email && row.key && row.expected !== undefined && row.apply);
+// }
 
 function runScript() {
     const result = listGroupSettings({
@@ -254,5 +328,107 @@ function runScript() {
         dryRun: false
     });
 
-    Logger.log(result); // ✅ This logs the output from the function
+    debugLog(result); // ✅ This logs the output from the function
+}
+
+/**
+ * ✅ Refactored filterGroupSettings — returns violations + preview array
+ */
+function filterGroupSettings(groupSettingsData, options = { limit: 3 }) {
+    const now = new Date().toISOString();
+    const keysToCheck = Object.keys(UPDATED_SETTINGS);
+    const violations = [];
+
+    groupSettingsData.forEach(entry => {
+        const { email, settings = {} } = entry;
+        if (!email || entry.unchanged || entry.error) return;
+
+        const { businessHash } = generateGroupSettingsHashPair(settings);
+
+        keysToCheck.forEach(key => {
+            const expectedValue = UPDATED_SETTINGS[key];
+            const actualValue = settings[key];
+
+            if (actualValue !== expectedValue) {
+                violations.push({
+                    email,
+                    key,
+                    expected: expectedValue,
+                    actual: actualValue ?? 'Not Found',
+                    hash: businessHash,
+                    lastModified: now,
+                    apply: true // ✅ for checkbox handling
+                });
+            }
+        });
+    });
+
+    const preview = violations.slice(0, options.limit).map(v => `${v.email} - ${v.key}: ${v.actual} → ${v.expected}`);
+    return { violations, preview };
+}
+
+/**
+ * ✅ Prompt user before executing updateGroupSettings()
+ */
+function updateGroupSettings() {
+    const violations = getDiscrepancyRowsFromSheet();
+    if (!violations || violations.length === 0) {
+        debugLog("✅ No discrepancies found — nothing to update.");
+        return [];
+    }
+
+    const ui = SpreadsheetApp.getUi();
+    const prompt = `You are about to update ${violations.length} checked setting(s).\n\nAre you sure you want to continue?`;
+    const response = ui.alert("⚠️ Confirm Update", prompt, ui.ButtonSet.YES_NO);
+    if (response !== ui.Button.YES) {
+        debugLog("❌ Update cancelled by user.");
+        return [];
+    }
+
+    const updates = {};
+    violations.forEach(({ email, key, expected }) => {
+        if (!email || !key || expected === undefined) return;
+        if (!updates[email]) updates[email] = {};
+        updates[email][key] = expected;
+    });
+
+    const results = [];
+    debugLog(`📦 Preparing to update ${Object.keys(updates).length} group(s)`);
+    Object.entries(updates).forEach(([email, updatePayload], i) => {
+        try {
+            debugLog(`🚀 [${i + 1}/${Object.keys(updates).length}] Updating ${email}`);
+
+            const response = patchGroupSettings(email, updatePayload);
+
+            const status = response.getResponseCode();
+            const content = response.getContentText();
+
+            if (status >= 200 && status < 300) {
+                debugLog(`✅ [${i + 1}] Updated ${email}: ${Object.keys(updatePayload).join(', ')}`);
+                results.push({ email, status, keys: Object.keys(updatePayload), success: true });
+            } else {
+                errorLog(`❌ [${i + 1}] Failed to update ${email}: ${content}`);
+                results.push({ email, status, keys: Object.keys(updatePayload), success: false, error: content });
+            }
+
+        } catch (err) {
+            errorLog(`❌ [${i + 1}] Exception while updating ${email}`, err.toString());
+            results.push({ email, success: false, error: err.toString() });
+        }
+    });
+
+    logUpdateResults(results);
+    return results;
+}
+
+/**
+ * ✅ Adds sheet menu for checking/unchecking all and triggers update
+ */
+function onOpen() {
+    SpreadsheetApp.getUi()
+        .createMenu('⚙️ Group Settings Tools')
+        .addItem('✅ Check All Updates', 'checkAllUpdates')
+        .addItem('❌ Uncheck All Updates', 'uncheckAllUpdates')
+        .addItem('🛠️ Apply Checked Updates', 'updateGroupSettings')
+        .addToUi();
 }

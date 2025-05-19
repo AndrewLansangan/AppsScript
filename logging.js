@@ -96,6 +96,9 @@ function errorLog(message, data = null) {
 function alwaysLog(message, data = null) {
   logWithLevel('ALWAYS', message, data);
 }
+function warnLog(message, data = null) {
+  logWithLevel('INFO', `⚠️ ${message}`, data);
+}
 
 // ========== 🧪 Specialized Event Logging ==========
 function logEventToSheet(sheetName, category, action, hash = '', message = '') {

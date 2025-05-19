@@ -6,7 +6,8 @@ const EXECUTION_MODE = {
   bypassETag: false,
   bypassHash: false,
   manual: false,
-  dryRun: false // ← optional
+  dryRun: false, // ← optional
+  cleanRun: false // ✅ New flag
 };
 
 const SHEET_NAMES = {
@@ -26,7 +27,7 @@ const GROUP_DIRECTORY_HEADERS = {
 
 // Group Settings (Settings API)
 const GROUP_SETTINGS_HEADERS = {
-  [SHEET_NAMES.DETAIL_REPORT]: ['Email', 'Key', 'Expected', 'Actual', 'Hash', 'Last Modified'],
+  [SHEET_NAMES.DETAIL_REPORT]: ['Email', 'Key', 'Expected', 'Actual', 'Hash', 'Last Modified', 'Apply'],
   [SHEET_NAMES.SUMMARY_REPORT]: ['Email', '# Violations', 'Violated Keys', 'Last Modified']
 };
 
@@ -130,3 +131,4 @@ const API_URLS = {
   groupQuery: "https://admin.googleapis.com/admin/directory/v1/groups",
   groupSetting: "https://www.googleapis.com/groups/v1/groups/"
 };
+const GITHUB_SECRET = PropertiesService.getScriptProperties().getProperty('GITHUB_WEBHOOK_SECRET');

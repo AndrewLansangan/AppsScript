@@ -96,7 +96,6 @@ function testLoggingSystem() {
   Logger.log("✅ Logged test event to GroupListLog and ACTIVITY LOG");
 }
 
-
 function runManualGroupSync() {
   const domain = getWorkspaceDomain();
   const { normalizedData } = fetchAllGroupData(domain, { bypassETag: true, manual: false });
@@ -130,8 +129,7 @@ function testWriteAllSheets() {
   Logger.log("✅ Wrote test group to sheet and logged ETag change.");
 }
 
-
-  function simulateUpdateGroupSettings() {
+function simulateUpdateGroupSettings() {
     const violations = getDiscrepancyRowsFromSheet();
     if (!violations || violations.length === 0) {
       debugLog("✅ No discrepancies found — nothing to simulate.");

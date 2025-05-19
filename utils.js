@@ -117,7 +117,8 @@ function resolveExecutionOptions(overrides) {
         bypassETag: (typeof overrides.bypassETag !== 'undefined') ? overrides.bypassETag : EXECUTION_MODE.bypassETag,
         bypassHash: (typeof overrides.bypassHash !== 'undefined') ? overrides.bypassHash : EXECUTION_MODE.bypassHash,
         manual:     (typeof overrides.manual !== 'undefined')     ? overrides.manual     : EXECUTION_MODE.manual,
-        dryRun:     (typeof overrides.dryRun !== 'undefined')     ? overrides.dryRun     : EXECUTION_MODE.dryRun
+        dryRun:     (typeof overrides.dryRun !== 'undefined')     ? overrides.dryRun     : EXECUTION_MODE.dryRun,
+        cleanRun: (typeof overrides.cleanRun !== 'undefined') ? overrides.cleanRun : EXECUTION_MODE.cleanRun
     };
 }
 
