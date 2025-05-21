@@ -500,3 +500,38 @@ function applyCompliantFormatting() {
 
     sheet.setConditionalFormatRules(rules);
 }
+
+function logToSheet(data) {
+    const sheetName = "GitHub Logs";
+    const expectedHeaders = ["Timestamp", "Event Type", "Sender", "Summary", "Raw Payload"];
+
+    const sheet = getOrCreateSheet(sheetName, expectedHeaders);
+    const now = new Date();
+
+    let eventType = "unknown";
+    let sender = "";
+    let summary = "";
+
+    if (data.zen) {
+        eventType = "ping";
+        summary = data.zen;
+    } else if (data.pull_request) {
+        eventType = "pull_request";
+        sender = data.pull_request.user.login;
+        summary = `${data.action} PR: ${data.pull_request.title}`;
+    } else if (data.ref) {
+        eventType = "push";
+        sender = data.pusher?.name || "";
+        summary = `${data.commits?.length || 0} commit(s) to ${data.ref}`;
+    }
+
+    const row = [
+        now,
+        eventType,
+        sender,
+        summary,
+        JSON.stringify(data)
+    ];
+
+    sheet.appendRow(row);
+}
