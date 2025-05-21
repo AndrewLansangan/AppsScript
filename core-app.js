@@ -1,101 +1,26 @@
 // ===========================
 // 🌐 App Entry Point and Workflows
 // ===========================
-// function getGithubSignature(e) {
-//     const headers = e?.parameter ?? {};
-//     const lowerHeaders = Object.keys(headers).reduce((acc, key) => {
-//         acc[key.toLowerCase()] = headers[key];
-//         return acc;
-//     }, {});
-//     return lowerHeaders['x-hub-signature-256'] || e?.headers?.['X-Hub-Signature-256'];
-// }
 
-// function verifyGithubSignature(payload, receivedSignature, secret) {
-//     if (!receivedSignature || !receivedSignature.startsWith('sha256=')) return false;
-//
-//     const raw = Utilities.computeHmacSha256Signature(payload, secret);
-//     const computedHex = raw.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
-//     const expected = `sha256=${computedHex}`;
-//
-//     return expected === receivedSignature;
-// }
+function doPost(e) {
+    const source = detectSource(e); // ← defined in utils.js
+    const eventType = getGithubHeader(e, 'X-GitHub-Event'); // GitHub-only
 
-// function doGet(e) {
-//     const headers = ["Issue ID", "Title", "Body", "Action", "Updated At", "URL"];
-//     const sheet = getOrCreateSheet("GitHub Issues", headers);
-//
-//     const last = sheet.getLastRow();
-//     if (last <= 1) {
-//         return ContentService.createTextOutput("No issues logged yet.");
-//     }
-//
-//     const lastRow = sheet.getRange(last, 1, 1, headers.length).getValues()[0];
-//     return ContentService
-//         .createTextOutput("📝 Last GitHub Issue:\n" + JSON.stringify(lastRow, null, 2))
-//         .setMimeType(ContentService.MimeType.TEXT);
-// }
+    switch (source) {
+        case 'github':
+            return handleGithubWebhook(e, eventType);
 
+        case 'slack':
+            return handleSlackWebhook(e);
 
-/**
- * GitHub Webhook Handler (Google Apps Script)
- * Verifies the GitHub signature using a secure secret stored in ScriptProperties.
- */
+        case 'notion.js':
+            return handleNotionWebhook(e);
 
-
-// function doPost(e) {
-//     try {
-//         const secret = PropertiesService.getScriptProperties().getProperty("GITHUB_WEBHOOK_SECRET");
-//         const raw = e.postData.contents;
-//         const signature = getGithubSignature(e);
-//
-//         if (!verifyGithubSignature(raw, signature, secret)) {
-//             Logger.log("❌ Invalid signature");
-//             return ContentService.createTextOutput("Unauthorized").setMimeType(ContentService.MimeType.TEXT);
-//         }
-//
-//         const data = JSON.parse(raw);
-//         logToSheet(data); // Optional — log everything to your sheet
-//
-//         // Ping test
-//         if (data.zen) {
-//             Logger.log(`Ping received: ${data.zen}`);
-//             return ContentService.createTextOutput("Pong!").setMimeType(ContentService.MimeType.TEXT);
-//         }
-//
-//         // Event routing
-//         if (data.ref) {
-//             handlePushEvent(data);
-//         } else if (data.pull_request) {
-//             handlePullRequestEvent(data);
-//         }
-//
-//         return ContentService.createTextOutput("✅ Webhook received").setMimeType(ContentService.MimeType.TEXT);
-//
-//     } catch (err) {
-//         Logger.log("❌ Error handling webhook: " + err);
-//         return ContentService.createTextOutput("Error").setMimeType(ContentService.MimeType.TEXT);
-//     }
-// }
-
-// function handlePullRequestEvent(data) {
-//     const action = data.action; // opened, closed, etc.
-//     const pr = data.pull_request;
-//     const title = pr.title;
-//     const author = pr.user.login;
-//     const url = pr.html_url;
-//
-//     Logger.log(`🛠 PR ${action}: "${title}" by ${author}`);
-//     Logger.log(`URL: ${url}`);
-// }
-
-// function handlePushEvent(data) {
-//     const branch = data.ref.replace("refs/heads/", "");
-//     const pusher = data.pusher.name;
-//     const commits = data.commits.map(c => `- ${c.message}`).join("\n");
-//
-//     Logger.log(`📦 Push to ${branch} by ${pusher}`);
-//     Logger.log(`Commits:\n${commits}`);
-// }
+        default:
+            logWebhookEvent('unknown', 'unhandled', e.postData.contents || '');
+            return ContentService.createTextOutput("⚠️ Unhandled webhook source");
+    }
+}
 
 function listGroups(options) {
     const executionOptions = resolveExecutionOptions(options);
