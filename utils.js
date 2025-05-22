@@ -154,3 +154,16 @@ function generateWebhookSecret() {
     }
     Logger.log(secret);
 }
+
+function detectSource(e) {
+    const headers = Object.keys(e.headers || {}).reduce((acc, k) => {
+        acc[k.toLowerCase()] = e.headers[k];
+        return acc;
+    }, {});
+
+    if (headers['x-github-event']) return 'github';
+    if (e.parameter?.command || e.parameter?.payload) return 'slack';
+    if (headers['notion.js-signature'] || e.postData?.contents?.includes('notion_id')) return 'notion.js';
+
+    return 'unknown';
+}

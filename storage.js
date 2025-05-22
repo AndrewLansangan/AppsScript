@@ -96,6 +96,7 @@ function cleanupLegacyHash(dataType) {
 
 function clearGroupProperties() {
     const keysToDelete = [
+        'USE_REGEX_FILTERS',
         'GROUP_DUAL_HASH_MAP',
         'GROUP_EMAILS_HASH',
         'BLACKLIST_REGEX',

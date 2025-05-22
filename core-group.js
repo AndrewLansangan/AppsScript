@@ -9,7 +9,8 @@ function fetchSingleGroupData(email) {
         const status = res.getResponseCode();
         if (status !== 200) throw new Error(res.getContentText());
 
-        return JSON.parse(res.getContentText());
+        const data = JSON.parse(res.getContentText());
+        return { email, data };
     } catch (e) {
         errorLog("❌ Error in fetchSingleGroupData", e.message || e.toString());
         return null;
@@ -55,7 +56,7 @@ function fetchSingleGroupData(email) {
  * - If an API error occurs (non-200 response), logs the error and returns an empty array `[]`.
  */
 
-function fetchAllGroupData(domain, options) {
+function fetchAllGroupData(domain, options = {}) {
     const { bypassETag, manual } = resolveExecutionOptions(options);
 
     if (manual) {
@@ -105,8 +106,8 @@ function fetchAllGroupData(domain, options) {
     } while (pageToken);
 
     if (domainEtagMatched && groups.length === 0) {
-        errorLog("⚠️ No groups returned due to domain-level ETag match. Using fallback GROUP_NORMALIZED_DATA.");
         const fallback = getStoredData("GROUP_NORMALIZED_DATA") || [];
+        errorLog(`⚠️ No groups returned due to domain-level ETag match. Using fallback GROUP_NORMALIZED_DATA (${fallback.length} entries).`);
         return { normalizedData: fallback, metaData: [] };
     }
 
@@ -114,9 +115,10 @@ function fetchAllGroupData(domain, options) {
     const metaData = [];
 
     for (const group of groups) {
-        const { businessHash, fullHash } = generateGroupSettingsHashPair(group);
-
         const email = group.email;
+        if (!email) continue;
+
+        const { businessHash, fullHash } = generateGroupSettingsHashPair(group);
         const oldETag = getGroupEtag(email);
         const newETag = group.etag || 'Not Found';
 
@@ -150,7 +152,6 @@ function fetchAllGroupData(domain, options) {
 
     return { normalizedData, metaData };
 }
-
 /**
  * Compares group settings against UPDATED_SETTINGS and returns discrepancies.
  *
@@ -188,21 +189,32 @@ function filterGroupSettings(groupSettingsData, options = { limit: 3 }) {
         });
     });
 
-    const preview = violations.slice(0, options.limit).map(v => `${v.email} - ${v.key}: ${v.actual} → ${v.expected}`);
+    const preview = violations.slice(0, options.limit).map(v =>
+        `${v.email} - ${v.key}: ${v.actual} → ${v.expected}`
+    );
+
     return { violations, preview };
 }
-
-function fetchGroupSettings(email, options) {
-    const { manual = false, bypassHash = false } = resolveExecutionOptions(options);
+function fetchGroupSettings(email, options = {}) {
+    const {
+        manual = false,
+        bypassHash = false,
+        hashMap
+    } = options;
 
     if (manual) {
         debugLog(`⚙️ Manual mode enabled — skipping fetch for ${email}`);
         return { email, manual: true };
     }
 
+    if (!hashMap) {
+        throw new Error("❌ Missing hashMap in fetchGroupSettings.");
+    }
+
     const encodedEmail = encodeURIComponent(email);
     const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodedEmail}?alt=json`;
     const headers = buildAuthHeaders();
+    const now = new Date().toISOString();
 
     try {
         const res = UrlFetchApp.fetch(url, {
@@ -226,26 +238,12 @@ function fetchGroupSettings(email, options) {
 
         const data = JSON.parse(contentText);
         const { businessHash, fullHash } = generateGroupSettingsHashPair(data);
-
-        const hashMap = loadGroupSettingsHashMap();
         const old = hashMap[email] || {};
 
-        let businessUnchanged = false;
-        let fullUnchanged = false;
+        const businessUnchanged = CHECK_BUSINESS_HASH ? businessHash === old.businessHash : true;
+        const fullUnchanged = CHECK_FULL_HASH ? fullHash === old.fullHash : true;
 
-        if (!bypassHash && CHECK_BUSINESS_HASH) {
-            businessUnchanged = businessHash === old.businessHash;
-        } else if (bypassHash) {
-            debugLog(`⚠️ ${email} - bypassHash is enabled — treating as changed`);
-        }
-
-        if (!bypassHash && CHECK_FULL_HASH) {
-            fullUnchanged = fullHash === old.fullHash;
-        }
-
-        const skip = !bypassHash &&
-            ((CHECK_BUSINESS_HASH ? businessUnchanged : true) &&
-                (CHECK_FULL_HASH ? fullUnchanged : true));
+        const skip = !bypassHash && businessUnchanged && fullUnchanged;
 
         if (skip) {
             return {
@@ -256,7 +254,6 @@ function fetchGroupSettings(email, options) {
         }
 
         hashMap[email] = { businessHash, fullHash };
-        storeGroupSettingsHashMap(hashMap);
 
         return {
             email,
@@ -270,69 +267,76 @@ function fetchGroupSettings(email, options) {
     }
 }
 
+    /**
+     * Fetches group settings for multiple groups and returns categorized results.
+     *
+     * @param {string[]} emails - Array of group email addresses.
+     * @param {Object} options - Execution flags (manual, dryRun, bypassHash, etc.)
+     * @returns {{
+     *   all: Object[],
+     *   changed: Object[],
+     *   unchanged: Object[],
+     *   errored: Object[]
+     * }}
+     */
+    function fetchAllGroupSettings(emails, options = {}) {
+        const executionOptions = resolveExecutionOptions(options);
+        const { bypassETag, bypassHash, manual, dryRun } = executionOptions;
 
-/**
- * Fetches group settings for multiple groups and returns categorized results.
- *
- * @param {string[]} emails - Array of group email addresses.
- * @param {Object} options - Execution flags (manual, dryRun, bypassHash, etc.)
- * @returns {{
- *   all: Object[],
- *   changed: Object[],
- *   unchanged: Object[],
- *   errored: Object[]
- * }}
- */
-function fetchAllGroupSettings(emails, options) {
-    const executionOptions = resolveExecutionOptions(options);
-    const { bypassETag, bypassHash, manual, dryRun } = executionOptions;
-
-    if (!Array.isArray(emails) || emails.length === 0) {
-        errorLog("❌ No group emails provided to fetchAllGroupSettings.");
-        return { all: [], changed: [], unchanged: [], errored: [] };
-    }
-
-    const all = [];
-    const changed = [];
-    const unchanged = [];
-    const errored = [];
-
-    debugLog(`📡 Fetching settings for ${emails.length} groups...`);
-
-    emails.forEach((email, i) => {
-        try {
-            const result = fetchGroupSettings(email, executionOptions);
-
-            all.push(result);
-
-            if (result.error) {
-                errored.push(result);
-            } else if (result.unchanged || result.manual) {
-                unchanged.push(result);
-            } else {
-                changed.push(result);
-            }
-
-            if ((i + 1) % 50 === 0) {
-                debugLog(`⏳ Processed ${i + 1}/${emails.length} emails...`);
-            }
-
-        } catch (err) {
-            const fallback = { email, error: true };
-            all.push(fallback);
-            errored.push(fallback);
-            errorLog(`❌ Error fetching settings for ${email}`, err.toString());
+        if (!Array.isArray(emails) || emails.length === 0) {
+            errorLog("❌ No group emails provided to fetchAllGroupSettings.");
+            return { all: [], changed: [], unchanged: [], errored: [] };
         }
-    });
 
-    debugLog(`✅ Completed group settings fetch:
+        const all = [];
+        const changed = [];
+        const unchanged = [];
+        const errored = [];
+
+        const hashMap = loadGroupSettingsHashMap();
+
+        debugLog(`📡 Fetching settings for ${emails.length} groups...`);
+
+        emails.forEach((email, i) => {
+            try {
+                const result = fetchGroupSettings(email, {
+                    ...executionOptions,
+                    hashMap
+                });
+
+                all.push(result);
+
+                if (result.error) {
+                    errored.push(result);
+                } else if (result.unchanged || result.manual) {
+                    unchanged.push(result);
+                } else {
+                    changed.push(result);
+                }
+
+                if ((i + 1) % 50 === 0) {
+                    debugLog(`⏳ Processed ${i + 1}/${emails.length} emails...`);
+                }
+
+            } catch (err) {
+                const fallback = { email, error: true };
+                all.push(fallback);
+                errored.push(fallback);
+                errorLog(`❌ Error fetching settings for ${email}`, err.toString());
+            }
+        });
+
+        debugLog(`📦 Saving GROUP_SETTINGS_HASH_MAP with ${Object.keys(hashMap).length} entries`);
+        storeGroupSettingsHashMap(hashMap);
+
+        debugLog(`✅ Completed group settings fetch:
   - Total: ${all.length}
   - Changed: ${changed.length}
   - Unchanged: ${unchanged.length}
   - Errored: ${errored.length}`);
 
-    return { all, changed, unchanged, errored };
-}
+        return { all, changed, unchanged, errored };
+    }
 
 function patchGroupSettings(email, updatePayload) {
     const url = `${GROUPS_SETTINGS_API_BASE_URL}/${encodeURIComponent(email)}`;
@@ -340,7 +344,7 @@ function patchGroupSettings(email, updatePayload) {
         method: 'PATCH',
         contentType: 'application/json',
         payload: JSON.stringify(updatePayload),
-        headers: buildAuthHeaders({ json: true }), // if you support a `json: true` flag for auth
+        headers: buildAuthHeaders({ json: true }),
         muteHttpExceptions: true
     });
 }

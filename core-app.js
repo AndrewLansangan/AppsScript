@@ -1,81 +1,24 @@
 // ===========================
 // 🌐 App Entry Point and Workflows
 // ===========================
-/**
- * Verifies the GitHub webhook signature
- */
-function verifySignature(secret, payload, githubSignature) {
-    const raw = Utilities.computeHmacSha256Signature(payload, secret);
-    const encoded = raw.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
-    const computedSignature = `sha256=${encoded}`;
-    return computedSignature === githubSignature;
-}
-
-function doGet(e) {
-    const headers = ["Issue ID", "Title", "Body", "Action", "Updated At", "URL"];
-    const sheet = getOrCreateSheet("GitHub Issues", headers);
-
-    const last = sheet.getLastRow();
-    if (last <= 1) {
-        return ContentService.createTextOutput("No issues logged yet.");
-    }
-
-    const lastRow = sheet.getRange(last, 1, 1, headers.length).getValues()[0];
-    return ContentService
-        .createTextOutput("📝 Last GitHub Issue:\n" + JSON.stringify(lastRow, null, 2))
-        .setMimeType(ContentService.MimeType.TEXT);
-}
-
 
 function doPost(e) {
-    try {
-        const headers = e?.headers || {};
-        const userAgent = headers['User-Agent'] || '';
-        const githubSignature = headers['X-Hub-Signature-256'];
-        const payload = e.postData.contents;
-        Logger.log("🚀 doPost triggered");
-        Logger.log("Headers: " + JSON.stringify(e?.headers));
-        Logger.log("Body: " + e.postData?.contents);
-        // ✅ 1. Ensure request is from GitHub
-        if (!userAgent.includes('GitHub-Hookshot')) {
-            Logger.log('❌ Rejected: Not from GitHub.');
-            return ContentService.createTextOutput('Forbidden');
-        }
+    const source = detectSource(e); // ← defined in utils.js
+    const eventType = getGithubHeader(e, 'X-GitHub-Event'); // GitHub-only
 
-        // ✅ 2. Verify signature (if using a secret)
-        if (GITHUB_SECRET && !verifySignature(GITHUB_SECRET, payload, githubSignature)) {
-            Logger.log('❌ Invalid GitHub signature.');
-            return ContentService.createTextOutput('Unauthorized');
-        }
+    switch (source) {
+        case 'github':
+            return handleGithubWebhook(e, eventType);
 
-        // ✅ 3. Process the webhook payload
-        const json = JSON.parse(payload);
+        case 'slack':
+            return handleSlackWebhook(e);
 
-        if (json.zen) {
-            Logger.log('✅ GitHub webhook ping received.');
-            return ContentService.createTextOutput('Ping OK');
-        }
+        case 'notion.js':
+            return handleNotionWebhook(e);
 
-        if (json.action && json.issue) {
-            const issue = json.issue;
-            const action = json.action;
-            const headers = ["Issue ID", "Title", "Body", "Action", "Updated At", "URL"];
-            const sheet = getOrCreateSheet("GitHub Issues", headers);
-
-            sheet.appendRow([
-                issue.id,
-                issue.title,
-                issue.body,
-                action
-            ]);
-
-            Logger.log(`✅ Logged issue: ${issue.title} (${action})`);
-        }
-
-        return ContentService.createTextOutput("OK");
-    } catch (error) {
-        Logger.log("🚨 Error: " + error.message);
-        return ContentService.createTextOutput("Error");
+        default:
+            logWebhookEvent('unknown', 'unhandled', e.postData.contents || '');
+            return ContentService.createTextOutput("⚠️ Unhandled webhook source");
     }
 }
 

@@ -16,11 +16,11 @@
     "config.js",
     "utils.js",
     "storage.js",
-
     "logging.js",
     "sheet.js",
     "auth.js",
-
+    "github.js",
+    "slack.js",
     "core-group.js",
     "core-app.js",
     "tests.js"
